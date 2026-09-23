@@ -3,14 +3,18 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              StartupUri="Views/MainWindow.xaml">
   <Application.Resources>
-    <SolidColorBrush x:Key="Bg" Color="#1B1F24"/>
-    <SolidColorBrush x:Key="Panel" Color="#252B33"/>
-    <SolidColorBrush x:Key="Border" Color="#38414C"/>
-    <SolidColorBrush x:Key="Fg" Color="#E6E9ED"/>
-    <SolidColorBrush x:Key="Muted" Color="#8B95A1"/>
+    <SolidColorBrush x:Key="Bg" Color="#1F1F1F"/>
+    <SolidColorBrush x:Key="Panel" Color="#262626"/>
+    <SolidColorBrush x:Key="Border" Color="#3E3E3E"/>
+    <SolidColorBrush x:Key="Control" Color="#3A3A3A"/>
+    <SolidColorBrush x:Key="ControlHover" Color="#474747"/>
+    <SolidColorBrush x:Key="Fg" Color="#F2F2F2"/>
+    <SolidColorBrush x:Key="Muted" Color="#9A9A9A"/>
     <SolidColorBrush x:Key="Accent" Color="#3FA9F5"/>
-    <SolidColorBrush x:Key="Ok" Color="#4CC38A"/>
-    <SolidColorBrush x:Key="Bad" Color="#E5534B"/>
+    <SolidColorBrush x:Key="Ok" Color="#1E8E2E"/>
+    <SolidColorBrush x:Key="OkHover" Color="#25A338"/>
+    <SolidColorBrush x:Key="Bad" Color="#C8141E"/>
+    <SolidColorBrush x:Key="BadHover" Color="#DD2630"/>
 
     <Style TargetType="Window" x:Key="SkyWindow">
       <Setter Property="Background" Value="{StaticResource Bg}"/>
@@ -24,35 +28,133 @@
     </Style>
     <Style TargetType="Label">
       <Setter Property="Foreground" Value="{StaticResource Muted}"/>
-      <Setter Property="Padding" Value="0,6,0,2"/>
+      <Setter Property="Padding" Value="0,8,0,3"/>
     </Style>
     <Style TargetType="TextBox">
       <Setter Property="Background" Value="{StaticResource Panel}"/>
       <Setter Property="Foreground" Value="{StaticResource Fg}"/>
       <Setter Property="BorderBrush" Value="{StaticResource Border}"/>
       <Setter Property="CaretBrush" Value="{StaticResource Fg}"/>
-      <Setter Property="Padding" Value="6,4"/>
+      <Setter Property="Padding" Value="8,6"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
     </Style>
     <Style TargetType="PasswordBox">
       <Setter Property="Background" Value="{StaticResource Panel}"/>
       <Setter Property="Foreground" Value="{StaticResource Fg}"/>
       <Setter Property="BorderBrush" Value="{StaticResource Border}"/>
-      <Setter Property="Padding" Value="6,4"/>
+      <Setter Property="CaretBrush" Value="{StaticResource Fg}"/>
+      <Setter Property="Padding" Value="8,6"/>
     </Style>
+    <Style TargetType="CheckBox">
+      <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+    </Style>
+
+    <!-- Flat button: grey by default, green/red variants below. -->
     <Style TargetType="Button">
-      <Setter Property="Background" Value="{StaticResource Panel}"/>
+      <Setter Property="Background" Value="{StaticResource Control}"/>
       <Setter Property="Foreground" Value="{StaticResource Fg}"/>
-      <Setter Property="BorderBrush" Value="{StaticResource Border}"/>
-      <Setter Property="Padding" Value="12,5"/>
-      <Setter Property="Margin" Value="0,0,6,0"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Padding" Value="14,7"/>
       <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="3" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Opacity" Value="0.85"/>
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="Bd" Property="Opacity" Value="0.7"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="Bd" Property="Opacity" Value="0.4"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
     </Style>
-    <Style TargetType="ToggleButton" x:Key="Toggle">
-      <Setter Property="Background" Value="{StaticResource Panel}"/>
+    <Style x:Key="GreenButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="Background" Value="{StaticResource Ok}"/>
+    </Style>
+    <Style x:Key="RedButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="Background" Value="{StaticResource Bad}"/>
+    </Style>
+
+    <!-- Toggle (RX, TX, MODE C, pin): grey when off, green when on. -->
+    <Style x:Key="Toggle" TargetType="ToggleButton">
+      <Setter Property="Background" Value="{StaticResource Control}"/>
       <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Padding" Value="12,6"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ToggleButton">
+            <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="3" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Ok}"/>
+              </Trigger>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Opacity" Value="0.85"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="Bd" Property="Opacity" Value="0.4"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- Section box with a caption above it (COM 1, COM 2, XPDR). -->
+    <Style x:Key="Box" TargetType="Border">
       <Setter Property="BorderBrush" Value="{StaticResource Border}"/>
-      <Setter Property="Padding" Value="12,5"/>
-      <Setter Property="Margin" Value="0,0,6,0"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="3"/>
+      <Setter Property="Padding" Value="12,8"/>
+    </Style>
+    <Style x:Key="Caption" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Margin" Value="4,0,0,4"/>
+    </Style>
+
+    <!-- Inline editable readouts (frequencies, squawk). -->
+    <Style x:Key="Readout" TargetType="TextBox">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+      <Setter Property="CaretBrush" Value="{StaticResource Fg}"/>
+      <Setter Property="FontSize" Value="30"/>
+      <Setter Property="FontFamily" Value="Segoe UI Light"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+
+    <Style TargetType="TabItem">
+      <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="TabItem">
+            <Border x:Name="Bd" Padding="12,5" Margin="0,0,2,0" Background="Transparent" BorderThickness="0,0,0,2" BorderBrush="Transparent">
+              <ContentPresenter ContentSource="Header"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsSelected" Value="True">
+                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Accent}"/>
+                <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
     </Style>
   </Application.Resources>
 </Application>

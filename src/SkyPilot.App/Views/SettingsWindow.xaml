@@ -1,23 +1,25 @@
 <Window x:Class="SkyPilot.App.Views.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Настройки" Width="360" SizeToContent="Height" ResizeMode="NoResize"
+        Title="Настройки" Width="380" SizeToContent="Height" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner" Style="{StaticResource SkyWindow}">
-  <StackPanel Margin="16">
+  <StackPanel Margin="18">
     <Label Content="CID"/>
     <TextBox x:Name="CidBox"/>
     <Label Content="Пароль"/>
     <PasswordBox x:Name="PasswordBox"/>
-    <Label Content="Имя (как видят диспетчеры)"/>
-    <TextBox x:Name="NameBox"/>
-    <Label Content="Адрес сервера (хост:порт)"/>
-    <TextBox x:Name="ServerBox"/>
-    <CheckBox x:Name="SoundBox" Content="Звук при личном сообщении" Foreground="{StaticResource Fg}" Margin="0,10,0,0"/>
-    <CheckBox x:Name="TopmostBox" Content="Окно поверх остальных" Foreground="{StaticResource Fg}" Margin="0,6,0,0"/>
-    <TextBlock x:Name="ErrorText" Foreground="{StaticResource Bad}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+    <Label Content="Имя"/>
+    <TextBox x:Name="NameBox" ToolTip="Так вас видят диспетчеры"/>
+    <Label Content="Адрес сервера"/>
+    <TextBox x:Name="ServerBox" ToolTip="Хост или хост:порт, например 127.0.0.1:6809"/>
+    <Label Content="Сайт SkyNetwork"/>
+    <TextBox x:Name="WebsiteBox" ToolTip="Здесь подаются планы полёта"/>
+    <CheckBox x:Name="SoundBox" Content="Звук при личном сообщении" Margin="0,14,0,0"/>
+    <CheckBox x:Name="TopmostBox" Content="Окно поверх остальных" Margin="0,8,0,0"/>
+    <TextBlock x:Name="ErrorText" Foreground="{StaticResource Bad}" TextWrapping="Wrap" Margin="0,10,0,0"/>
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
-      <Button Content="Сохранить" IsDefault="True" Click="OnOk"/>
-      <Button Content="Отмена" IsCancel="True" Margin="0"/>
+      <Button Content="СОХРАНИТЬ" IsDefault="True" Click="OnOk" Style="{StaticResource GreenButton}" Margin="0,0,8,0"/>
+      <Button Content="ОТМЕНА" IsCancel="True"/>
     </StackPanel>
   </StackPanel>
 </Window>

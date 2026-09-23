@@ -1,99 +1,211 @@
 <Window x:Class="SkyPilot.App.Views.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="SkyPilot" Width="820" Height="520" MinWidth="620" MinHeight="380"
-        Style="{StaticResource SkyWindow}">
-  <DockPanel Margin="10">
-    <!-- Toolbar -->
-    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-      <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
-        <Button x:Name="ConnectButton" Content="{Binding ConnectButtonText}" Click="OnConnectClick"/>
-        <Button Content="План полёта" Click="OnFlightPlanClick"/>
-        <ToggleButton Style="{StaticResource Toggle}" Content="Mode C" IsChecked="{Binding ModeC}" Click="OnModeCClick"
-                      ToolTip="Режим ответчика: Standby / Mode C"/>
-        <Button Content="IDENT" Click="OnIdentClick"/>
-        <Button Content="Настройки" Click="OnSettingsClick"/>
-      </StackPanel>
-      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-        <TextBlock Text="{Binding SimStatus}" Foreground="{StaticResource Muted}" Margin="0,0,12,0" ToolTip="{Binding SimError}"/>
-        <TextBlock Text="{Binding NetStatus}" FontWeight="SemiBold"/>
-      </StackPanel>
+        Title="{Binding WindowTitle}" Width="1040" Height="480" MinWidth="860" MinHeight="420"
+        Topmost="{Binding Topmost}" Style="{StaticResource SkyWindow}">
+  <Window.Resources>
+    <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+  </Window.Resources>
+
+  <Grid Margin="12">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+
+    <!-- Top bar: flight plan status (filed on the website) and "always on top" pin -->
+    <DockPanel Margin="0,0,0,10">
+      <ToggleButton DockPanel.Dock="Right" Style="{StaticResource Toggle}" IsChecked="{Binding Topmost}"
+                    Content="📌" Padding="10,6" Margin="8,0,0,0" ToolTip="Поверх остальных окон"/>
+      <Button DockPanel.Dock="Right" Content="ОБНОВИТЬ" Margin="8,0,0,0" Click="OnRefreshFlightPlanClick"
+              ToolTip="Загрузить поданный план с сайта"/>
+      <Button x:Name="FlightPlanButton" Content="{Binding FlightPlanText}" FontSize="14" Padding="14,9"
+              Click="OnFlightPlanClick" ToolTip="Открыть подачу плана полёта на сайте SkyNetwork">
+        <Button.Style>
+          <Style TargetType="Button" BasedOn="{StaticResource RedButton}">
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding HasFlightPlan}" Value="True">
+                <Setter Property="Background" Value="{StaticResource Ok}"/>
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Button.Style>
+      </Button>
     </DockPanel>
 
-    <!-- Radios -->
-    <Border DockPanel.Dock="Top" Background="{StaticResource Panel}" BorderBrush="{StaticResource Border}"
-            BorderThickness="1" CornerRadius="4" Padding="10,6" Margin="0,0,0,8">
-      <StackPanel Orientation="Horizontal">
-        <TextBlock Text="COM1 " Foreground="{StaticResource Muted}"/>
-        <TextBlock Text="{Binding Com1}" FontFamily="Consolas" FontSize="16" Foreground="{StaticResource Accent}" Margin="0,0,24,0"/>
-        <TextBlock Text="COM2 " Foreground="{StaticResource Muted}"/>
-        <TextBlock Text="{Binding Com2}" FontFamily="Consolas" FontSize="16" Margin="0,0,24,0"/>
-        <TextBlock Text="XPDR " Foreground="{StaticResource Muted}"/>
-        <TextBlock Text="{Binding Squawk}" FontFamily="Consolas" FontSize="16" Margin="0,0,24,0"/>
-        <TextBlock Text="Трафик: " Foreground="{StaticResource Muted}"/>
-        <TextBlock Text="{Binding TrafficCount}"/>
-      </StackPanel>
-    </Border>
-
-    <!-- Command line -->
-    <TextBox x:Name="Input" DockPanel.Dock="Bottom" Margin="0,8,0,0" KeyDown="OnInputKeyDown" FontFamily="Consolas"
-             ToolTip="Текст уходит на COM1. Команды: .help"/>
-
-    <Grid>
+    <Grid Grid.Row="1">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="*"/>
-        <ColumnDefinition Width="200"/>
+        <ColumnDefinition Width="*" MinWidth="300"/>
+        <ColumnDefinition Width="400"/>
+        <ColumnDefinition Width="Auto"/>
       </Grid.ColumnDefinitions>
 
-      <TabControl ItemsSource="{Binding Tabs}" SelectedItem="{Binding SelectedTab}"
-                  Background="{StaticResource Panel}" BorderBrush="{StaticResource Border}">
-        <TabControl.ItemTemplate>
-          <DataTemplate>
-            <TextBlock Text="{Binding Title}" Foreground="Black">
-              <TextBlock.Style>
-                <Style TargetType="TextBlock">
+      <!-- Chat -->
+      <DockPanel Margin="0,0,12,0">
+        <TextBlock DockPanel.Dock="Top" Margin="4,0,0,4" FontSize="12">
+          <Run Text="TX" Foreground="{StaticResource Muted}"/>
+          <Run Text="{Binding TxFrequency, Mode=OneWay}"/>
+        </TextBlock>
+        <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+          <Button DockPanel.Dock="Right" Content="SEND" Margin="8,0,0,0" Click="OnSendClick"/>
+          <TextBox x:Name="Input" KeyDown="OnInputKeyDown" FontFamily="Consolas"
+                   ToolTip="Текст уходит на частоту TX. Команды: .help"/>
+        </DockPanel>
+        <Border Style="{StaticResource Box}" Padding="4">
+          <TabControl ItemsSource="{Binding Tabs}" SelectedItem="{Binding SelectedTab}"
+                      Background="Transparent" BorderThickness="0" Padding="0,4,0,0">
+            <TabControl.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding Title}" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=TabItem}}">
+                  <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding Unread}" Value="True">
+                          <Setter Property="FontWeight" Value="Bold"/>
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </TextBlock.Style>
+                </TextBlock>
+              </DataTemplate>
+            </TabControl.ItemTemplate>
+            <TabControl.ContentTemplate>
+              <DataTemplate>
+                <ListBox ItemsSource="{Binding Lines}" Background="Transparent" BorderThickness="0"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" Loaded="OnChatLoaded">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock TextWrapping="Wrap" Foreground="{Binding Color}">
+                        <Run Text="{Binding Time, Mode=OneWay}" Foreground="#6E6E6E"/>
+                        <Run Text="{Binding From, Mode=OneWay}" FontWeight="Bold"/><Run Text=": "/>
+                        <Run Text="{Binding Text, Mode=OneWay}"/>
+                      </TextBlock>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </DataTemplate>
+            </TabControl.ContentTemplate>
+          </TabControl>
+        </Border>
+      </DockPanel>
+
+      <!-- Transponder and radios -->
+      <StackPanel Grid.Column="1">
+        <TextBlock Text="XPDR" Style="{StaticResource Caption}"/>
+        <Border Style="{StaticResource Box}" Margin="0,0,0,10">
+          <DockPanel>
+            <Button DockPanel.Dock="Right" Content="ID" Width="64" Click="OnIdentClick" ToolTip="IDENT">
+              <Button.Style>
+                <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
                   <Style.Triggers>
-                    <DataTrigger Binding="{Binding Unread}" Value="True">
-                      <Setter Property="FontWeight" Value="Bold"/>
+                    <DataTrigger Binding="{Binding Identing}" Value="True">
+                      <Setter Property="Background" Value="{StaticResource Ok}"/>
                     </DataTrigger>
                   </Style.Triggers>
                 </Style>
-              </TextBlock.Style>
-            </TextBlock>
-          </DataTemplate>
-        </TabControl.ItemTemplate>
-        <TabControl.ContentTemplate>
-          <DataTemplate>
-            <ListBox ItemsSource="{Binding Lines}" Background="Transparent" BorderThickness="0"
-                     ScrollViewer.HorizontalScrollBarVisibility="Disabled" Loaded="OnChatLoaded">
-              <ListBox.ItemTemplate>
-                <DataTemplate>
-                  <TextBlock TextWrapping="Wrap" Foreground="{Binding Color}" FontFamily="Consolas">
-                    <Run Text="{Binding Time, Mode=OneWay}" Foreground="#6B7580"/>
-                    <Run Text="{Binding From, Mode=OneWay}" FontWeight="Bold"/><Run Text=": "/>
-                    <Run Text="{Binding Text, Mode=OneWay}"/>
-                  </TextBlock>
-                </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
-          </DataTemplate>
-        </TabControl.ContentTemplate>
-      </TabControl>
+              </Button.Style>
+            </Button>
+            <ToggleButton DockPanel.Dock="Right" Style="{StaticResource Toggle}" Width="96" Margin="0,0,10,0"
+                          IsChecked="{Binding ModeC}" Content="{Binding ModeCText}" Click="OnModeCClick"
+                          ToolTip="Режим ответчика: Standby / Mode C"/>
+            <TextBox x:Name="SquawkBox" Style="{StaticResource Readout}" Text="{Binding Squawk, Mode=OneWay}"
+                     MaxLength="4" KeyDown="OnSquawkKeyDown" ToolTip="Введите код и нажмите Enter"/>
+          </DockPanel>
+        </Border>
 
-      <DockPanel Grid.Column="1" Margin="8,0,0,0">
-        <TextBlock DockPanel.Dock="Top" Text="Диспетчеры рядом" Foreground="{StaticResource Muted}" Margin="0,0,0,4"/>
-        <ListView ItemsSource="{Binding Controllers}" Background="{StaticResource Panel}" BorderBrush="{StaticResource Border}"
-                  MouseDoubleClick="OnControllerDoubleClick" ToolTip="Двойной щелчок — настроить COM1">
-          <ListView.ItemTemplate>
-            <DataTemplate>
-              <StackPanel Orientation="Horizontal">
-                <TextBlock Text="{Binding Callsign}" Width="95" FontWeight="SemiBold"/>
-                <TextBlock Text="{Binding Frequency}" FontFamily="Consolas" Foreground="{StaticResource Accent}"/>
-              </StackPanel>
-            </DataTemplate>
-          </ListView.ItemTemplate>
-        </ListView>
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition/>
+            <ColumnDefinition Width="10"/>
+            <ColumnDefinition/>
+          </Grid.ColumnDefinitions>
+          <StackPanel>
+            <TextBlock Text="COM 1" Style="{StaticResource Caption}"/>
+            <Border Style="{StaticResource Box}">
+              <DockPanel>
+                <StackPanel DockPanel.Dock="Right" VerticalAlignment="Center">
+                  <ToggleButton Style="{StaticResource Toggle}" Content="RX" Width="54" Margin="0,0,0,6"
+                                IsChecked="{Binding Com1Rx}" Click="OnRxTxClick"/>
+                  <ToggleButton Style="{StaticResource Toggle}" Content="TX" Width="54"
+                                IsChecked="{Binding Com1Tx}" Click="OnRxTxClick"/>
+                </StackPanel>
+                <StackPanel VerticalAlignment="Center">
+                  <TextBox x:Name="Com1Box" Style="{StaticResource Readout}" Text="{Binding Com1, Mode=OneWay}"
+                           MaxLength="7" KeyDown="OnComKeyDown" Tag="1" ToolTip="Введите частоту и нажмите Enter"/>
+                  <TextBlock Text="{Binding Com1Station}" Foreground="{StaticResource Muted}" FontSize="12"/>
+                </StackPanel>
+              </DockPanel>
+            </Border>
+          </StackPanel>
+          <StackPanel Grid.Column="2">
+            <TextBlock Text="COM 2" Style="{StaticResource Caption}"/>
+            <Border Style="{StaticResource Box}">
+              <DockPanel>
+                <StackPanel DockPanel.Dock="Right" VerticalAlignment="Center">
+                  <ToggleButton Style="{StaticResource Toggle}" Content="RX" Width="54" Margin="0,0,0,6"
+                                IsChecked="{Binding Com2Rx}" Click="OnRxTxClick"/>
+                  <ToggleButton Style="{StaticResource Toggle}" Content="TX" Width="54"
+                                IsChecked="{Binding Com2Tx}" Click="OnRxTxClick"/>
+                </StackPanel>
+                <StackPanel VerticalAlignment="Center">
+                  <TextBox x:Name="Com2Box" Style="{StaticResource Readout}" Text="{Binding Com2, Mode=OneWay}"
+                           MaxLength="7" KeyDown="OnComKeyDown" Tag="2" ToolTip="Введите частоту и нажмите Enter"/>
+                  <TextBlock Text="{Binding Com2Station}" Foreground="{StaticResource Muted}" FontSize="12"/>
+                </StackPanel>
+              </DockPanel>
+            </Border>
+          </StackPanel>
+        </Grid>
+
+        <TextBlock Margin="4,10,0,0" Foreground="{StaticResource Muted}" FontSize="12">
+          <Run Text="Трафик рядом:"/>
+          <Run Text="{Binding TrafficCount, Mode=OneWay}" Foreground="{StaticResource Fg}"/>
+        </TextBlock>
+      </StackPanel>
+
+      <!-- ATC -->
+      <DockPanel Grid.Column="2" Width="200" Margin="12,0,0,0"
+                 Visibility="{Binding AtcVisible, Converter={StaticResource BoolToVis}}">
+        <TextBlock DockPanel.Dock="Top" Text="ATC" Style="{StaticResource Caption}"/>
+        <Border Style="{StaticResource Box}" Padding="2">
+          <ListBox ItemsSource="{Binding Controllers}" Background="Transparent" BorderThickness="0"
+                   MouseDoubleClick="OnControllerDoubleClick" ToolTip="Двойной щелчок — настроить радио TX">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <StackPanel Orientation="Horizontal" Margin="2,2">
+                  <TextBlock Text="{Binding Callsign}" Width="100" FontWeight="SemiBold"/>
+                  <TextBlock Text="{Binding Frequency}" Foreground="{StaticResource Accent}"/>
+                </StackPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Border>
       </DockPanel>
     </Grid>
-  </DockPanel>
+
+    <!-- Bottom bar -->
+    <DockPanel Grid.Row="2" Margin="0,10,0,0">
+      <Button x:Name="ConnectButton" Content="{Binding ConnectButtonText}" Width="130" Margin="0,0,8,0"
+              Click="OnConnectClick" ToolTip="Подключиться к сети / отключиться">
+        <Button.Style>
+          <Style TargetType="Button" BasedOn="{StaticResource RedButton}">
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding NetConnected}" Value="True">
+                <Setter Property="Background" Value="{StaticResource Ok}"/>
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Button.Style>
+      </Button>
+      <ToggleButton Style="{StaticResource Toggle}" Content="ATC" Width="100" Margin="0,0,8,0" IsChecked="{Binding AtcVisible}"/>
+      <Button Content="НАСТРОЙКИ" Width="120" Click="OnSettingsClick"/>
+      <TextBlock DockPanel.Dock="Right" FontSize="12">
+        <Run Text="UTC" Foreground="{StaticResource Muted}"/>
+        <Run Text="{Binding UtcTime, Mode=OneWay}"/>
+      </TextBlock>
+      <TextBlock Text="{Binding SimStatus}" ToolTip="{Binding SimError}" Foreground="{StaticResource Muted}"
+                 FontSize="12" HorizontalAlignment="Right" Margin="0,0,20,0"/>
+    </DockPanel>
+  </Grid>
 </Window>
