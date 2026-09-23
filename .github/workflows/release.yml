@@ -1,15 +1,12 @@
 name: Release
 
 # Builds a ready-to-run SkyPilot for Windows x64 (self-contained, no .NET install needed).
-#  - Pull requests / manual runs: the zip is attached to the run as an artifact.
+#  - Every push to main, pull request and manual run: the package is attached to the run as an artifact.
 #  - Tags v*: the zip is also published as a GitHub Release.
 on:
   workflow_dispatch:
-    inputs:
-      sdk_url:
-        description: "Optional URL of the MSFS SDK installer (.msi) or a .zip with the SimConnect DLLs. Not needed if the msfs-sdk draft release exists"
-        required: false
   push:
+    branches: [main]
     tags: ["v*"]
   pull_request:
 
@@ -26,108 +23,60 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      # SimConnect comes from the MSFS SDK, which has no public download link (it is installed from
-      # MSFS developer mode), so it is not stored in the repository. Sources, in order:
-      #  1. a DRAFT release named "msfs-sdk" (drafts are visible only to maintainers) with either
-      #     SimConnect.dll + Microsoft.FlightSimulator.SimConnect.dll, a .zip of them, or the SDK .msi;
-      #  2. the sdk_url input / MSFS_SDK_URL repository variable (.zip or .msi).
-      - name: Get SimConnect
-        id: simconnect
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SDK_URL: ${{ github.event.inputs.sdk_url || vars.MSFS_SDK_URL }}
-        run: |
-          $dir = Join-Path $env:RUNNER_TEMP 'msfs-sdk'
-          New-Item -ItemType Directory -Force $dir | Out-Null
-          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; 'X-GitHub-Api-Version' = '2022-11-28' }
-          $downloads = @()
-
-          $release = Invoke-RestMethod "https://api.github.com/repos/${{ github.repository }}/releases?per_page=100" -Headers $headers |
-            Where-Object { $_.name -eq 'msfs-sdk' -or $_.tag_name -eq 'msfs-sdk' } | Select-Object -First 1
-          if ($release) {
-            foreach ($asset in $release.assets) {
-              $file = Join-Path $dir $asset.name
-              Write-Host "Release asset: $($asset.name) ($($asset.size) bytes)"
-              Invoke-WebRequest $asset.url -Headers ($headers + @{ Accept = 'application/octet-stream' }) -OutFile $file -UseBasicParsing
-              $downloads += $file
-            }
-          } elseif ($env:SDK_URL) {
-            $name = [IO.Path]::GetFileName(([Uri]$env:SDK_URL).AbsolutePath)
-            if (-not $name) { $name = 'msfs-sdk.msi' }
-            $file = Join-Path $dir $name
-            Write-Host "Downloading $env:SDK_URL"
-            Invoke-WebRequest $env:SDK_URL -OutFile $file -UseBasicParsing
-            $downloads += $file
-          }
-
-          foreach ($file in $downloads) {
-            if ($file -match '\.zip$') {
-              Expand-Archive $file -DestinationPath (Join-Path $dir 'zip') -Force
-            } elseif ($file -match '\.msi$') {
-              # Administrative install only unpacks the files, nothing is installed on the runner.
-              $p = Start-Process msiexec.exe -ArgumentList "/a `"$file`" /qn TARGETDIR=`"$(Join-Path $dir 'msi')`"" -Wait -PassThru
-              if ($p.ExitCode -ne 0) { throw "msiexec failed: $($p.ExitCode)" }
-            }
-          }
-
-          $managed = Get-ChildItem $dir -Recurse -Filter 'Microsoft.FlightSimulator.SimConnect.dll' | Select-Object -First 1
-          $native = Get-ChildItem $dir -Recurse -Filter 'SimConnect.dll' |
-            Sort-Object { $_.FullName -match 'managed' } | Select-Object -First 1
-          if (-not $managed -or -not $native) {
-            $msg = 'SimConnect not found. Install the MSFS SDK (MSFS > Options > General > Developers > Developer Mode, then Help > SDK Installers), ' +
-                   'and attach SimConnect.dll and Microsoft.FlightSimulator.SimConnect.dll from "MSFS SDK\SimConnect SDK\lib" (and lib\managed) ' +
-                   'to a DRAFT release named msfs-sdk in this repository.'
-            if ('${{ github.event_name }}' -eq 'pull_request') {
-              Write-Host "::warning::$msg The package step is skipped for this pull request."
-              "found=false" >> $env:GITHUB_OUTPUT
-              exit 0
-            }
-            throw $msg
-          }
-          Write-Host "Managed: $($managed.FullName)"
-          Write-Host "Native:  $($native.FullName)"
-          "found=true" >> $env:GITHUB_OUTPUT
-          "managed=$($managed.FullName)" >> $env:GITHUB_OUTPUT
-          "native=$($native.FullName)" >> $env:GITHUB_OUTPUT
-
       - name: Test
         run: dotnet test tests/SkyPilot.Core.Tests -c Release
 
       - name: Version
-        if: steps.simconnect.outputs.found == 'true'
         id: version
         shell: pwsh
         run: |
-          if ('${{ github.ref_type }}' -eq 'tag') { $v = '${{ github.ref_name }}'.TrimStart('v') } else { $v = '0.1.0' }
-          $name = if ('${{ github.ref_type }}' -eq 'tag') { "SkyPilot-$v-win-x64" } else { "SkyPilot-$v-${{ github.run_number }}-win-x64" }
+          if ('${{ github.ref_type }}' -eq 'tag') {
+            $v = '${{ github.ref_name }}'.TrimStart('v'); $name = "SkyPilot-$v-win-x64"
+          } else {
+            $v = '0.1.0'; $name = "SkyPilot-$v-build${{ github.run_number }}-win-x64"
+          }
           "version=$v" >> $env:GITHUB_OUTPUT
           "name=$name" >> $env:GITHUB_OUTPUT
 
       - name: Publish
-        if: steps.simconnect.outputs.found == 'true'
         shell: pwsh
         run: |
           dotnet publish src/SkyPilot.App -c Release -r win-x64 --self-contained true `
-            -p:Version=${{ steps.version.outputs.version }} `
-            -p:RequireMsfsSdk=true `
-            "-p:SimConnectManaged=${{ steps.simconnect.outputs.managed }}" `
-            "-p:SimConnectNative=${{ steps.simconnect.outputs.native }}" `
-            -o publish/SkyPilot
+            -p:Version=${{ steps.version.outputs.version }} -o publish/SkyPilot
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          foreach ($f in 'SkyPilot.exe', 'SimConnect.dll', 'Microsoft.FlightSimulator.SimConnect.dll') {
-            if (-not (Test-Path "publish/SkyPilot/$f")) { throw "$f missing from the package" }
+          if (-not (Test-Path publish/SkyPilot/SkyPilot.exe)) { throw "SkyPilot.exe missing" }
+
+      # SimConnect.dll is part of the MSFS SDK and has no public download. SkyPilot finds it at run
+      # time next to SkyPilot.exe or in the installed SDK. If the maintainers attached it to a DRAFT
+      # release named "msfs-sdk", it is bundled so users don't need the SDK.
+      - name: Bundle SimConnect.dll (optional)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; 'X-GitHub-Api-Version' = '2022-11-28' }
+          $release = Invoke-RestMethod "https://api.github.com/repos/${{ github.repository }}/releases?per_page=100" -Headers $headers |
+            Where-Object { $_.name -eq 'msfs-sdk' -or $_.tag_name -eq 'msfs-sdk' } | Select-Object -First 1
+          $asset = $release.assets | Where-Object { $_.name -eq 'SimConnect.dll' } | Select-Object -First 1
+          if ($asset) {
+            Invoke-WebRequest $asset.url -Headers ($headers + @{ Accept = 'application/octet-stream' }) `
+              -OutFile publish/SkyPilot/SimConnect.dll -UseBasicParsing
+            Write-Host "SimConnect.dll bundled"
+          } else {
+            Write-Host "::notice::SimConnect.dll not bundled (no msfs-sdk draft release). SkyPilot will look for it next to SkyPilot.exe or in the MSFS SDK."
           }
-          Compress-Archive -Path publish/SkyPilot -DestinationPath "${{ steps.version.outputs.name }}.zip"
+
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path publish/SkyPilot -DestinationPath "${{ steps.version.outputs.name }}.zip"
 
       - uses: actions/upload-artifact@v4
-        if: steps.simconnect.outputs.found == 'true'
         with:
           name: ${{ steps.version.outputs.name }}
           path: publish/SkyPilot
 
       - name: GitHub Release
-        if: github.ref_type == 'tag' && steps.simconnect.outputs.found == 'true'
+        if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ steps.version.outputs.name }}.zip

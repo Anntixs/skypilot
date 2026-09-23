@@ -1,21 +1,24 @@
 using System.Runtime.InteropServices;
-using Microsoft.FlightSimulator.SimConnect;
 using SkyPilot.Core.Model;
 using SkyPilot.Core.Simulation;
 
 namespace SkyPilot.SimConnect;
 
 /// <summary>
-/// Microsoft Flight Simulator 2020 / 2024 via SimConnect.
+/// Microsoft Flight Simulator 2020 / 2024 via the SimConnect C API.
 /// A background thread pumps SimConnect messages; events are raised on that thread, but never
 /// while the internal lock is held, so handlers may call back into this class.
 /// </summary>
 public sealed class MsfsSimulator : ISimulator
 {
-    private enum Definition { OwnAircraft = 1, RemoteAircraft = 2 }
-    private enum Request { OwnAircraft = 1, AiRelease = 2, AiRemove = 3, CreateBase = 1000 }
-    private enum ClientEvent { Com1SetHz = 1, Com2SetHz, TransponderSet, FreezeLatLon, FreezeAltitude, FreezeAttitude }
-    private enum Group { Default = 1 }
+    private const uint DefOwnAircraft = 1;
+    private const uint DefRemoteAircraft = 2;
+    private const uint ReqOwnAircraft = 1;
+    private const uint ReqAiRelease = 2;
+    private const uint ReqAiRemove = 3;
+    private const uint ReqCreateBase = 1000;
+    private const uint EvtCom1SetHz = 1, EvtCom2SetHz = 2, EvtTransponderSet = 3;
+    private const uint EvtFreezeLatLon = 4, EvtFreezeAltitude = 5, EvtFreezeAttitude = 6;
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     private struct OwnAircraftStruct
@@ -58,14 +61,17 @@ public sealed class MsfsSimulator : ISimulator
     private readonly Dictionary<string, SimAircraft> _aircraft = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<uint, SimAircraft> _byRequest = [];
     private readonly List<Action> _pendingEvents = [];
-    private Microsoft.FlightSimulator.SimConnect.SimConnect? _sc;
+    private IntPtr _handle;
     private AutoResetEvent? _signal;
     private Thread? _pump;
     private volatile bool _connected;
-    private uint _nextRequest = (uint)Request.CreateBase;
+    private uint _nextRequest = ReqCreateBase;
 
     public string Name => "Microsoft Flight Simulator";
     public bool IsConnected => _connected;
+
+    /// <summary>Why the last <see cref="Connect"/> failed, for the status bar.</summary>
+    public string? LastError { get; private set; }
 
     public event EventHandler<bool>? ConnectionChanged;
     public event EventHandler<OwnAircraftData>? OwnAircraftUpdated;
@@ -75,23 +81,33 @@ public sealed class MsfsSimulator : ISimulator
     {
         lock (_lock)
         {
-            if (_sc != null) return true;
+            if (_handle != IntPtr.Zero) return true;
+            if (!Native.TryLoad())
+            {
+                LastError = "SimConnect.dll не найден — положите его рядом с SkyPilot.exe (из MSFS SDK: SimConnect SDK\\lib)";
+                return false;
+            }
             var signal = new AutoResetEvent(false);
+            int hr;
             try
             {
-                _sc = new Microsoft.FlightSimulator.SimConnect.SimConnect("SkyPilot", IntPtr.Zero, 0, signal, 0);
+                hr = Native.Open(out _handle, "SkyPilot", IntPtr.Zero, 0, signal.SafeWaitHandle.DangerousGetHandle(), 0);
             }
-            catch (COMException)
+            catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
             {
                 signal.Dispose();
-                return false; // simulator not running
+                LastError = "Не удалось загрузить SimConnect.dll: " + e.Message;
+                return false;
             }
+            if (hr != 0 || _handle == IntPtr.Zero)
+            {
+                _handle = IntPtr.Zero;
+                signal.Dispose();
+                LastError = null; // simulator is simply not running
+                return false;
+            }
+            LastError = null;
             _signal = signal;
-            _sc.OnRecvOpen += OnOpen;
-            _sc.OnRecvQuit += (_, _) => Defer(() => Disconnect());
-            _sc.OnRecvException += OnException;
-            _sc.OnRecvAssignedObjectId += OnAssignedObjectId;
-            _sc.OnRecvSimobjectData += OnSimobjectData;
             _pump = new Thread(PumpLoop) { IsBackground = true, Name = "SimConnect" };
             _pump.Start();
             return true;
@@ -103,9 +119,9 @@ public sealed class MsfsSimulator : ISimulator
         bool wasConnected;
         lock (_lock)
         {
-            if (_sc == null) return;
-            try { _sc.Dispose(); } catch (COMException) { }
-            _sc = null;
+            if (_handle == IntPtr.Zero) return;
+            Native.Close(_handle);
+            _handle = IntPtr.Zero;
             _aircraft.Clear();
             _byRequest.Clear();
             wasConnected = _connected;
@@ -121,17 +137,14 @@ public sealed class MsfsSimulator : ISimulator
         {
             var signal = _signal;
             if (signal == null) return;
-            signal.WaitOne(250);
+            try { signal.WaitOne(250); } catch (ObjectDisposedException) { return; }
             lock (_lock)
             {
-                if (_sc == null) return;
-                try
+                if (_handle == IntPtr.Zero) return;
+                while (Native.GetNextDispatch(_handle, out var data, out _) == 0 && data != IntPtr.Zero)
                 {
-                    _sc.ReceiveMessage();
-                }
-                catch (COMException)
-                {
-                    Defer(() => Disconnect());
+                    Dispatch(data);
+                    if (_handle == IntPtr.Zero) break;
                 }
             }
             FlushEvents();
@@ -153,53 +166,74 @@ public sealed class MsfsSimulator : ISimulator
         foreach (var e in events) e();
     }
 
-    private void OnOpen(Microsoft.FlightSimulator.SimConnect.SimConnect sc, SIMCONNECT_RECV_OPEN data)
+    private void Dispatch(IntPtr data)
     {
-        void Add(Definition def, string name, string units, SIMCONNECT_DATATYPE type = SIMCONNECT_DATATYPE.FLOAT64) =>
-            sc.AddToDataDefinition(def, name, units, type, 0, uint.MaxValue);
+        var header = Marshal.PtrToStructure<Native.Recv>(data);
+        switch (header.Id)
+        {
+            case Native.RecvId.Open:
+                OnOpen();
+                break;
+            case Native.RecvId.Quit:
+                Defer(Disconnect);
+                break;
+            case Native.RecvId.SimObjectData:
+                OnSimObjectData(data);
+                break;
+            case Native.RecvId.AssignedObjectId:
+                OnAssignedObjectId(Marshal.PtrToStructure<Native.RecvAssignedObjectId>(data));
+                break;
+            case Native.RecvId.Exception:
+                OnException(Marshal.PtrToStructure<Native.RecvException>(data));
+                break;
+        }
+    }
 
-        Add(Definition.OwnAircraft, "PLANE LATITUDE", "degrees");
-        Add(Definition.OwnAircraft, "PLANE LONGITUDE", "degrees");
-        Add(Definition.OwnAircraft, "PLANE ALTITUDE", "feet");
-        Add(Definition.OwnAircraft, "PLANE PITCH DEGREES", "degrees");
-        Add(Definition.OwnAircraft, "PLANE BANK DEGREES", "degrees");
-        Add(Definition.OwnAircraft, "PLANE HEADING DEGREES TRUE", "degrees");
-        Add(Definition.OwnAircraft, "GROUND VELOCITY", "knots");
-        Add(Definition.OwnAircraft, "SIM ON GROUND", "bool", SIMCONNECT_DATATYPE.INT32);
-        Add(Definition.OwnAircraft, "PRESSURE ALTITUDE", "feet");
-        Add(Definition.OwnAircraft, "COM ACTIVE FREQUENCY:1", "MHz");
-        Add(Definition.OwnAircraft, "COM ACTIVE FREQUENCY:2", "MHz");
-        Add(Definition.OwnAircraft, "TRANSPONDER CODE:1", "Bco16", SIMCONNECT_DATATYPE.INT32);
-        sc.RegisterDataDefineStruct<OwnAircraftStruct>(Definition.OwnAircraft);
+    private void OnOpen()
+    {
+        void Add(uint def, string name, string units, Native.DataType type = Native.DataType.Float64) =>
+            Native.AddToDataDefinition(_handle, def, name, units, type, 0, Native.Unused);
 
-        Add(Definition.RemoteAircraft, "PLANE LATITUDE", "degrees");
-        Add(Definition.RemoteAircraft, "PLANE LONGITUDE", "degrees");
-        Add(Definition.RemoteAircraft, "PLANE ALTITUDE", "feet");
-        Add(Definition.RemoteAircraft, "PLANE PITCH DEGREES", "degrees");
-        Add(Definition.RemoteAircraft, "PLANE BANK DEGREES", "degrees");
-        Add(Definition.RemoteAircraft, "PLANE HEADING DEGREES TRUE", "degrees");
-        sc.RegisterDataDefineStruct<RemoteAircraftStruct>(Definition.RemoteAircraft);
+        Add(DefOwnAircraft, "PLANE LATITUDE", "degrees");
+        Add(DefOwnAircraft, "PLANE LONGITUDE", "degrees");
+        Add(DefOwnAircraft, "PLANE ALTITUDE", "feet");
+        Add(DefOwnAircraft, "PLANE PITCH DEGREES", "degrees");
+        Add(DefOwnAircraft, "PLANE BANK DEGREES", "degrees");
+        Add(DefOwnAircraft, "PLANE HEADING DEGREES TRUE", "degrees");
+        Add(DefOwnAircraft, "GROUND VELOCITY", "knots");
+        Add(DefOwnAircraft, "SIM ON GROUND", "bool", Native.DataType.Int32);
+        Add(DefOwnAircraft, "PRESSURE ALTITUDE", "feet");
+        Add(DefOwnAircraft, "COM ACTIVE FREQUENCY:1", "MHz");
+        Add(DefOwnAircraft, "COM ACTIVE FREQUENCY:2", "MHz");
+        Add(DefOwnAircraft, "TRANSPONDER CODE:1", "Bco16", Native.DataType.Int32);
 
-        sc.MapClientEventToSimEvent(ClientEvent.Com1SetHz, "COM_RADIO_SET_HZ");
-        sc.MapClientEventToSimEvent(ClientEvent.Com2SetHz, "COM2_RADIO_SET_HZ");
-        sc.MapClientEventToSimEvent(ClientEvent.TransponderSet, "XPNDR_SET");
-        sc.MapClientEventToSimEvent(ClientEvent.FreezeLatLon, "FREEZE_LATITUDE_LONGITUDE_SET");
-        sc.MapClientEventToSimEvent(ClientEvent.FreezeAltitude, "FREEZE_ALTITUDE_SET");
-        sc.MapClientEventToSimEvent(ClientEvent.FreezeAttitude, "FREEZE_ATTITUDE_SET");
+        Add(DefRemoteAircraft, "PLANE LATITUDE", "degrees");
+        Add(DefRemoteAircraft, "PLANE LONGITUDE", "degrees");
+        Add(DefRemoteAircraft, "PLANE ALTITUDE", "feet");
+        Add(DefRemoteAircraft, "PLANE PITCH DEGREES", "degrees");
+        Add(DefRemoteAircraft, "PLANE BANK DEGREES", "degrees");
+        Add(DefRemoteAircraft, "PLANE HEADING DEGREES TRUE", "degrees");
+
+        Native.MapClientEventToSimEvent(_handle, EvtCom1SetHz, "COM_RADIO_SET_HZ");
+        Native.MapClientEventToSimEvent(_handle, EvtCom2SetHz, "COM2_RADIO_SET_HZ");
+        Native.MapClientEventToSimEvent(_handle, EvtTransponderSet, "XPNDR_SET");
+        Native.MapClientEventToSimEvent(_handle, EvtFreezeLatLon, "FREEZE_LATITUDE_LONGITUDE_SET");
+        Native.MapClientEventToSimEvent(_handle, EvtFreezeAltitude, "FREEZE_ALTITUDE_SET");
+        Native.MapClientEventToSimEvent(_handle, EvtFreezeAttitude, "FREEZE_ATTITUDE_SET");
 
         // About 10 updates per second of the user's aircraft.
-        sc.RequestDataOnSimObject(Request.OwnAircraft, Definition.OwnAircraft,
-            Microsoft.FlightSimulator.SimConnect.SimConnect.SIMCONNECT_OBJECT_ID_USER,
-            SIMCONNECT_PERIOD.SIM_FRAME, SIMCONNECT_DATA_REQUEST_FLAG.DEFAULT, 0, 6, 0);
+        Native.RequestDataOnSimObject(_handle, ReqOwnAircraft, DefOwnAircraft, Native.ObjectIdUser,
+            Native.Period.SimFrame, 0, 0, 6, 0);
 
         _connected = true;
         Defer(() => ConnectionChanged?.Invoke(this, true));
     }
 
-    private void OnSimobjectData(Microsoft.FlightSimulator.SimConnect.SimConnect sc, SIMCONNECT_RECV_SIMOBJECT_DATA data)
+    private void OnSimObjectData(IntPtr data)
     {
-        if (data.dwRequestID != (uint)Request.OwnAircraft || data.dwData.Length == 0) return;
-        var s = (OwnAircraftStruct)data.dwData[0];
+        var header = Marshal.PtrToStructure<Native.RecvSimObjectData>(data);
+        if (header.RequestId != ReqOwnAircraft) return;
+        var s = Marshal.PtrToStructure<OwnAircraftStruct>(data + Native.SimObjectDataOffset);
         var own = new OwnAircraftData(
             new AircraftState(s.Latitude, s.Longitude, s.Altitude,
                 PitchDegrees: -s.Pitch, BankDegrees: -s.Bank, s.Heading, s.GroundSpeed, s.OnGround != 0),
@@ -211,25 +245,25 @@ public sealed class MsfsSimulator : ISimulator
         Defer(() => OwnAircraftUpdated?.Invoke(this, own));
     }
 
-    private void OnAssignedObjectId(Microsoft.FlightSimulator.SimConnect.SimConnect sc, SIMCONNECT_RECV_ASSIGNED_OBJECT_ID data)
+    private void OnAssignedObjectId(Native.RecvAssignedObjectId data)
     {
-        if (!_byRequest.Remove(data.dwRequestID, out var ac)) return;
+        if (!_byRequest.Remove(data.RequestId, out var ac)) return;
         if (!_aircraft.TryGetValue(ac.Callsign, out var current) || !ReferenceEquals(current, ac))
         {
             // Removed while it was being created.
-            sc.AIRemoveObject(data.dwObjectID, Request.AiRemove);
+            Native.AIRemoveObject(_handle, data.ObjectId, ReqAiRemove);
             return;
         }
-        ac.ObjectId = data.dwObjectID;
-        sc.AIReleaseControl(data.dwObjectID, Request.AiRelease);
-        foreach (var e in new[] { ClientEvent.FreezeLatLon, ClientEvent.FreezeAltitude, ClientEvent.FreezeAttitude })
-            sc.TransmitClientEvent(data.dwObjectID, e, 1, Group.Default, SIMCONNECT_EVENT_FLAG.GROUPID_IS_PRIORITY);
+        ac.ObjectId = data.ObjectId;
+        Native.AIReleaseControl(_handle, data.ObjectId, ReqAiRelease);
+        foreach (var e in new[] { EvtFreezeLatLon, EvtFreezeAltitude, EvtFreezeAttitude })
+            Native.TransmitClientEvent(_handle, data.ObjectId, e, 1, Native.GroupPriorityHighest, Native.EventFlagGroupIdIsPriority);
     }
 
-    private void OnException(Microsoft.FlightSimulator.SimConnect.SimConnect sc, SIMCONNECT_RECV_EXCEPTION data)
+    private void OnException(Native.RecvException data)
     {
-        if (data.dwException != (uint)SIMCONNECT_EXCEPTION.CREATE_OBJECT_FAILED) return;
-        var failed = _aircraft.Values.FirstOrDefault(a => a.ObjectId == null && a.SendId == data.dwSendID);
+        if (data.Exception != Native.ExceptionCreateObjectFailed) return;
+        var failed = _aircraft.Values.FirstOrDefault(a => a.ObjectId == null && a.SendId == data.SendId);
         if (failed == null) return;
         _aircraft.Remove(failed.Callsign);
         _byRequest.Remove(failed.RequestId);
@@ -240,10 +274,10 @@ public sealed class MsfsSimulator : ISimulator
     {
         lock (_lock)
         {
-            if (_sc == null || !_connected) return;
+            if (_handle == IntPtr.Zero || !_connected) return;
             RemoveLocked(callsign);
             var ac = new SimAircraft(callsign, modelTitle) { RequestId = _nextRequest++ };
-            var init = new SIMCONNECT_DATA_INITPOSITION
+            var init = new Native.InitPosition
             {
                 Latitude = state.Latitude,
                 Longitude = state.Longitude,
@@ -255,8 +289,8 @@ public sealed class MsfsSimulator : ISimulator
                 Airspeed = (uint)Math.Max(0, state.GroundSpeedKnots),
             };
             string tail = callsign.Length > 12 ? callsign[..12] : callsign;
-            _sc.AICreateNonATCAircraft(modelTitle, tail, init, (Request)ac.RequestId);
-            _sc.GetLastSentPacketID(out var sendId);
+            Native.AICreateNonATCAircraft(_handle, modelTitle, tail, init, ac.RequestId);
+            Native.GetLastSentPacketId(_handle, out var sendId);
             ac.SendId = sendId;
             _aircraft[callsign] = ac;
             _byRequest[ac.RequestId] = ac;
@@ -267,7 +301,7 @@ public sealed class MsfsSimulator : ISimulator
     {
         lock (_lock)
         {
-            if (_sc == null || !_aircraft.TryGetValue(callsign, out var ac) || ac.ObjectId is not { } id) return;
+            if (_handle == IntPtr.Zero || !_aircraft.TryGetValue(callsign, out var ac) || ac.ObjectId is not { } id) return;
             var data = new RemoteAircraftStruct
             {
                 Latitude = state.Latitude,
@@ -277,7 +311,17 @@ public sealed class MsfsSimulator : ISimulator
                 Bank = -state.BankDegrees,
                 Heading = state.HeadingDegrees,
             };
-            _sc.SetDataOnSimObject(Definition.RemoteAircraft, id, SIMCONNECT_DATA_SET_FLAG.DEFAULT, data);
+            int size = Marshal.SizeOf<RemoteAircraftStruct>();
+            IntPtr buffer = Marshal.AllocHGlobal(size);
+            try
+            {
+                Marshal.StructureToPtr(data, buffer, false);
+                Native.SetDataOnSimObject(_handle, DefRemoteAircraft, id, 0, 0, (uint)size, buffer);
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
         }
     }
 
@@ -297,16 +341,16 @@ public sealed class MsfsSimulator : ISimulator
     {
         if (!_aircraft.Remove(callsign, out var ac)) return;
         // Pending creations are cleaned up in OnAssignedObjectId.
-        if (ac.ObjectId is { } id && _sc != null) _sc.AIRemoveObject(id, Request.AiRemove);
+        if (ac.ObjectId is { } id && _handle != IntPtr.Zero) Native.AIRemoveObject(_handle, id, ReqAiRemove);
     }
 
     public void SetComFrequency(int radio, int khz)
     {
         lock (_lock)
         {
-            _sc?.TransmitClientEvent(Microsoft.FlightSimulator.SimConnect.SimConnect.SIMCONNECT_OBJECT_ID_USER,
-                radio == 2 ? ClientEvent.Com2SetHz : ClientEvent.Com1SetHz, (uint)khz * 1000, Group.Default,
-                SIMCONNECT_EVENT_FLAG.GROUPID_IS_PRIORITY);
+            if (_handle == IntPtr.Zero) return;
+            Native.TransmitClientEvent(_handle, Native.ObjectIdUser, radio == 2 ? EvtCom2SetHz : EvtCom1SetHz,
+                (uint)khz * 1000, Native.GroupPriorityHighest, Native.EventFlagGroupIdIsPriority);
         }
     }
 
@@ -314,8 +358,9 @@ public sealed class MsfsSimulator : ISimulator
     {
         lock (_lock)
         {
-            _sc?.TransmitClientEvent(Microsoft.FlightSimulator.SimConnect.SimConnect.SIMCONNECT_OBJECT_ID_USER,
-                ClientEvent.TransponderSet, ToBco16(code), Group.Default, SIMCONNECT_EVENT_FLAG.GROUPID_IS_PRIORITY);
+            if (_handle == IntPtr.Zero) return;
+            Native.TransmitClientEvent(_handle, Native.ObjectIdUser, EvtTransponderSet, ToBco16(code),
+                Native.GroupPriorityHighest, Native.EventFlagGroupIdIsPriority);
         }
     }
 
