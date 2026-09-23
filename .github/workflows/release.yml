@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       sdk_url:
-        description: "Direct URL of the MSFS SDK Core installer (.msi). Leave empty to find it on sdk.flightsimulator.com"
+        description: "Optional URL of the MSFS SDK installer (.msi) or a .zip with the SimConnect DLLs. Not needed if the msfs-sdk draft release exists"
         required: false
   push:
     tags: ["v*"]
@@ -26,114 +26,76 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      # SimConnect is part of the MSFS SDK and is not stored in this repository.
-      - name: Find MSFS SDK installer
-        id: sdk
-        shell: pwsh
-        env:
-          SDK_URL: ${{ github.event.inputs.sdk_url || vars.MSFS_SDK_URL }}
-        run: |
-          $url = $env:SDK_URL
-          if (-not $url) {
-            # 1. Crawl the MSFS documentation (two levels) for installer links and SDK version numbers.
-            $seeds = @(
-              'https://docs.flightsimulator.com/html/Introduction/SDK_Overview.htm',
-              'https://docs.flightsimulator.com/html/Introduction/Release_Notes.htm',
-              'https://docs.flightsimulator.com/msfs2024/html/1_Introduction/SDK_Overview.htm',
-              'https://docs.flightsimulator.com/msfs2024/html/1_Introduction/Release_Notes.htm'
-            )
-            $queue = [System.Collections.Generic.Queue[pscustomobject]]::new()
-            foreach ($s in $seeds) { $queue.Enqueue([pscustomobject]@{ Url = $s; Depth = 0 }) }
-            $seen = @{}; $installers = @(); $sdkLinks = @(); $versions = @()
-            while ($queue.Count -gt 0 -and $seen.Count -lt 40) {
-              $item = $queue.Dequeue()
-              if ($seen.ContainsKey($item.Url)) { continue }
-              $seen[$item.Url] = $true
-              try { $r = Invoke-WebRequest $item.Url -UseBasicParsing -MaximumRedirection 5 -TimeoutSec 20 }
-              catch { Write-Host "  $($item.Url) -> $($_.Exception.Message)"; continue }
-              Write-Host "  $($item.Url) -> $($r.StatusCode), $($r.Content.Length) bytes"
-              if ($item.Url -match 'Release_Notes') {
-                $versions += [regex]::Matches($r.Content, '\b(\d+\.\d+\.\d+)\b') | ForEach-Object { $_.Groups[1].Value }
-              }
-              foreach ($m in [regex]::Matches($r.Content, '(?:href|src)\s*=\s*["'']([^"''#]+)["'']')) {
-                try { $abs = ([Uri]::new([Uri]$item.Url, $m.Groups[1].Value)).AbsoluteUri } catch { continue }
-                if ($abs -match 'sdk\.flightsimulator\.com') { $sdkLinks += $abs }
-                if ($abs -match '\.msi(\?|$)') { $installers += $abs }
-                elseif ($item.Depth -lt 1 -and $abs -match 'docs\.flightsimulator\.com.*\.htm' -and $abs -match '(?i)sdk|download|install') {
-                  $queue.Enqueue([pscustomobject]@{ Url = $abs; Depth = $item.Depth + 1 })
-                }
-              }
-            }
-            Write-Host "Links to sdk.flightsimulator.com:`n$(($sdkLinks | Select-Object -Unique) -join "`n")"
-
-            # 2. Try the usual installer locations for the SDK versions mentioned in the release notes.
-            $versions = $versions | Where-Object { $_ -match '^(0|1)\.' } | Select-Object -Unique |
-              Sort-Object { [version]$_ } -Descending | Select-Object -First 12
-            Write-Host "SDK versions in release notes: $($versions -join ', ')"
-            foreach ($v in $versions) {
-              foreach ($name in @("MSFS_SDK_Core_Installer_$v.msi", "MSFS2024_SDK_Core_Installer_$v.msi")) {
-                $installers += "https://sdk.flightsimulator.com/files/installers/$v/$name"
-              }
-            }
-            $installers = $installers | Select-Object -Unique
-            $found = @()
-            foreach ($candidate in $installers) {
-              try {
-                $h = Invoke-WebRequest $candidate -Method Head -UseBasicParsing -TimeoutSec 20
-                Write-Host "  OK  $candidate ($($h.Headers['Content-Length']) bytes)"
-                $found += $candidate
-              } catch { Write-Host "  --  $candidate" }
-            }
-            $links = $found | Where-Object { $_ -match '(?i)core' }
-            # Prefer the MSFS 2020 SDK (its SimConnect works with both 2020 and 2024), newest version first.
-            $url = $links | Sort-Object `
-              @{ Expression = { $_ -notmatch '2024' } }, `
-              @{ Expression = { $m = [regex]::Match($_, '(\d+)\.(\d+)\.(\d+)'); if ($m.Success) { [version]$m.Value } else { [version]'0.0.0' } } } |
-              Select-Object -Last 1
-          }
-          if (-not $url) { throw "MSFS SDK installer not found. Pass sdk_url or set the MSFS_SDK_URL repository variable." }
-          Write-Host "Using $url"
-          "url=$url" >> $env:GITHUB_OUTPUT
-
-      - name: Cache MSFS SDK
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}/msfs-sdk
-          key: msfs-sdk-${{ steps.sdk.outputs.url }}
-
-      - name: Download and extract MSFS SDK
-        if: steps.cache.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          $msi = Join-Path $env:RUNNER_TEMP 'msfs-sdk.msi'
-          $dir = Join-Path $env:RUNNER_TEMP 'msfs-sdk'
-          Invoke-WebRequest '${{ steps.sdk.outputs.url }}' -OutFile $msi -UseBasicParsing
-          # Administrative install only unpacks the files, nothing is installed on the runner.
-          $p = Start-Process msiexec.exe -ArgumentList "/a `"$msi`" /qn TARGETDIR=`"$dir`"" -Wait -PassThru
-          if ($p.ExitCode -ne 0) { throw "msiexec failed: $($p.ExitCode)" }
-
-      - name: Locate SimConnect
+      # SimConnect comes from the MSFS SDK, which has no public download link (it is installed from
+      # MSFS developer mode), so it is not stored in the repository. Sources, in order:
+      #  1. a DRAFT release named "msfs-sdk" (drafts are visible only to maintainers) with either
+      #     SimConnect.dll + Microsoft.FlightSimulator.SimConnect.dll, a .zip of them, or the SDK .msi;
+      #  2. the sdk_url input / MSFS_SDK_URL repository variable (.zip or .msi).
+      - name: Get SimConnect
         id: simconnect
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SDK_URL: ${{ github.event.inputs.sdk_url || vars.MSFS_SDK_URL }}
         run: |
           $dir = Join-Path $env:RUNNER_TEMP 'msfs-sdk'
-          $managed = Get-ChildItem $dir -Recurse -Filter 'Microsoft.FlightSimulator.SimConnect.dll' | Select-Object -First 1
-          if (-not $managed) { Get-ChildItem $dir -Recurse -Depth 4 | Select-Object -First 80 FullName; throw "Managed SimConnect not found in SDK" }
-          $native = Join-Path $managed.Directory.Parent.FullName 'SimConnect.dll'
-          if (-not (Test-Path $native)) {
-            $native = (Get-ChildItem $dir -Recurse -Filter 'SimConnect.dll' | Where-Object { $_.FullName -notmatch 'managed' } | Select-Object -First 1).FullName
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; 'X-GitHub-Api-Version' = '2022-11-28' }
+          $downloads = @()
+
+          $release = Invoke-RestMethod "https://api.github.com/repos/${{ github.repository }}/releases?per_page=100" -Headers $headers |
+            Where-Object { $_.name -eq 'msfs-sdk' -or $_.tag_name -eq 'msfs-sdk' } | Select-Object -First 1
+          if ($release) {
+            foreach ($asset in $release.assets) {
+              $file = Join-Path $dir $asset.name
+              Write-Host "Release asset: $($asset.name) ($($asset.size) bytes)"
+              Invoke-WebRequest $asset.url -Headers ($headers + @{ Accept = 'application/octet-stream' }) -OutFile $file -UseBasicParsing
+              $downloads += $file
+            }
+          } elseif ($env:SDK_URL) {
+            $name = [IO.Path]::GetFileName(([Uri]$env:SDK_URL).AbsolutePath)
+            if (-not $name) { $name = 'msfs-sdk.msi' }
+            $file = Join-Path $dir $name
+            Write-Host "Downloading $env:SDK_URL"
+            Invoke-WebRequest $env:SDK_URL -OutFile $file -UseBasicParsing
+            $downloads += $file
           }
-          if (-not $native) { throw "Native SimConnect.dll not found in SDK" }
+
+          foreach ($file in $downloads) {
+            if ($file -match '\.zip$') {
+              Expand-Archive $file -DestinationPath (Join-Path $dir 'zip') -Force
+            } elseif ($file -match '\.msi$') {
+              # Administrative install only unpacks the files, nothing is installed on the runner.
+              $p = Start-Process msiexec.exe -ArgumentList "/a `"$file`" /qn TARGETDIR=`"$(Join-Path $dir 'msi')`"" -Wait -PassThru
+              if ($p.ExitCode -ne 0) { throw "msiexec failed: $($p.ExitCode)" }
+            }
+          }
+
+          $managed = Get-ChildItem $dir -Recurse -Filter 'Microsoft.FlightSimulator.SimConnect.dll' | Select-Object -First 1
+          $native = Get-ChildItem $dir -Recurse -Filter 'SimConnect.dll' |
+            Sort-Object { $_.FullName -match 'managed' } | Select-Object -First 1
+          if (-not $managed -or -not $native) {
+            $msg = 'SimConnect not found. Install the MSFS SDK (MSFS > Options > General > Developers > Developer Mode, then Help > SDK Installers), ' +
+                   'and attach SimConnect.dll and Microsoft.FlightSimulator.SimConnect.dll from "MSFS SDK\SimConnect SDK\lib" (and lib\managed) ' +
+                   'to a DRAFT release named msfs-sdk in this repository.'
+            if ('${{ github.event_name }}' -eq 'pull_request') {
+              Write-Host "::warning::$msg The package step is skipped for this pull request."
+              "found=false" >> $env:GITHUB_OUTPUT
+              exit 0
+            }
+            throw $msg
+          }
           Write-Host "Managed: $($managed.FullName)"
-          Write-Host "Native:  $native"
+          Write-Host "Native:  $($native.FullName)"
+          "found=true" >> $env:GITHUB_OUTPUT
           "managed=$($managed.FullName)" >> $env:GITHUB_OUTPUT
-          "native=$native" >> $env:GITHUB_OUTPUT
+          "native=$($native.FullName)" >> $env:GITHUB_OUTPUT
 
       - name: Test
         run: dotnet test tests/SkyPilot.Core.Tests -c Release
 
       - name: Version
+        if: steps.simconnect.outputs.found == 'true'
         id: version
         shell: pwsh
         run: |
@@ -143,6 +105,7 @@ jobs:
           "name=$name" >> $env:GITHUB_OUTPUT
 
       - name: Publish
+        if: steps.simconnect.outputs.found == 'true'
         shell: pwsh
         run: |
           dotnet publish src/SkyPilot.App -c Release -r win-x64 --self-contained true `
@@ -158,12 +121,13 @@ jobs:
           Compress-Archive -Path publish/SkyPilot -DestinationPath "${{ steps.version.outputs.name }}.zip"
 
       - uses: actions/upload-artifact@v4
+        if: steps.simconnect.outputs.found == 'true'
         with:
           name: ${{ steps.version.outputs.name }}
           path: publish/SkyPilot
 
       - name: GitHub Release
-        if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag' && steps.simconnect.outputs.found == 'true'
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ steps.version.outputs.name }}.zip
