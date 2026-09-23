@@ -35,16 +35,37 @@ jobs:
         run: |
           $url = $env:SDK_URL
           if (-not $url) {
-            $base = 'https://sdk.flightsimulator.com/'
-            $links = @()
-            foreach ($page in @($base, "${base}msfs2024/", "${base}msfs2020/")) {
-              try {
-                $html = (Invoke-WebRequest $page -UseBasicParsing).Content
-                $links += [regex]::Matches($html, '[^"''\s<>]*SDK[^"''\s<>]*Core[^"''\s<>]*\.msi') | ForEach-Object { $_.Value }
-              } catch { Write-Host "skip $page : $($_.Exception.Message)" }
+            # Crawl the MSFS SDK / documentation sites (two levels) for SDK installer links.
+            $seeds = @(
+              'https://sdk.flightsimulator.com/',
+              'https://sdk.flightsimulator.com/files/installers/',
+              'https://docs.flightsimulator.com/html/Introduction/SDK_Overview.htm',
+              'https://docs.flightsimulator.com/html/Introduction/Introduction.htm',
+              'https://docs.flightsimulator.com/msfs2024/html/1_Introduction/SDK_Overview.htm',
+              'https://docs.flightsimulator.com/msfs2024/html/1_Introduction/Introduction.htm',
+              'https://docs.flightsimulator.com/'
+            )
+            $queue = [System.Collections.Generic.Queue[object]]::new()
+            $seeds | ForEach-Object { $queue.Enqueue(@($_, 0)) }
+            $seen = @{}; $installers = @()
+            while ($queue.Count -gt 0 -and $seen.Count -lt 60) {
+              $page, $depth = $queue.Dequeue()
+              if ($seen.ContainsKey($page)) { continue }
+              $seen[$page] = $true
+              try { $r = Invoke-WebRequest $page -UseBasicParsing -MaximumRedirection 5 -TimeoutSec 20 }
+              catch { Write-Host "  $page -> $($_.Exception.Message)"; continue }
+              Write-Host "  $page -> $($r.StatusCode), $($r.Content.Length) bytes"
+              foreach ($m in [regex]::Matches($r.Content, '(?:href|src)\s*=\s*["'']([^"''#]+)["'']')) {
+                try { $abs = ([Uri]::new([Uri]$page, $m.Groups[1].Value)).AbsoluteUri } catch { continue }
+                if ($abs -match '\.(msi|zip|exe)(\?|$)' -and $abs -match 'sdk') { $installers += $abs }
+                elseif ($depth -lt 2 -and $abs -match 'flightsimulator\.com' -and $abs -match '(?i)sdk|download|install|release') {
+                  $queue.Enqueue(@($abs, $depth + 1))
+                }
+              }
             }
-            $links = $links | ForEach-Object { ([Uri]::new([Uri]$base, $_)).AbsoluteUri } | Select-Object -Unique
-            Write-Host "Installers found:`n$($links -join "`n")"
+            $installers = $installers | Select-Object -Unique
+            Write-Host "Installers found:`n$($installers -join "`n")"
+            $links = $installers | Where-Object { $_ -match '(?i)core' -and $_ -match '\.msi' }
             # Prefer the MSFS 2020 SDK (its SimConnect works with both 2020 and 2024), newest version first.
             $url = $links | Sort-Object `
               @{ Expression = { $_ -notmatch '2024' } }, `
