@@ -59,7 +59,7 @@ public class SessionTests
         Assert.Equal("#APAFL123:SERVER:1000001:secret:1:100:1:Ivan Petrov", server.Expect("#AP"));
         Assert.StartsWith("@S:AFL123:2000:1:55.970000:37.410000:3000:180:", server.Expect("@"));
         Assert.True(session.IsConnected);
-        await WaitFor(() => messages.FirstOrDefault(m => m.Kind == MessageKind.Server));
+        await WaitFor(() => { lock (messages) return messages.FirstOrDefault(m => m.Kind == MessageKind.Server); });
 
         session.ModeC = true;
         session.Ident();
@@ -109,7 +109,7 @@ public class SessionTests
         await server.SendAsync("#TMUUEE_TWR:AFL123:private: with colon");
         await server.SendAsync("#TMSUP1:*:network broadcast");
 
-        await WaitFor(() => messages.Count(m => m.Kind == MessageKind.Broadcast) > 0 ? "" : null);
+        await WaitFor(() => { lock (messages) return messages.Any(m => m.Kind == MessageKind.Broadcast) ? "" : null; });
         List<ChatMessage> got;
         lock (messages) got = messages.ToList();
         var radio = got.Where(m => m.Kind == MessageKind.Radio).ToList();

@@ -48,6 +48,23 @@ dotnet run --project src/SkyPilot.App -c Release
 
 Если SDK не найден, сборка всё равно пройдёт, но с заглушкой SimConnect. Подключиться к симулятору такая сборка не сможет, и MSBuild об этом предупредит.
 
+## Готовая сборка через GitHub Actions
+
+Workflow **Release** собирает готовый к запуску `SkyPilot.exe` для Windows x64 со встроенным .NET. Результат лежит в артефактах запуска, а при пуше тега `v*` публикуется как GitHub Release.
+
+У MSFS SDK нет публичной ссылки для скачивания, поэтому файлы SimConnect нужно один раз передать workflow:
+
+1. В MSFS включите режим разработчика: *Options → General → Developers → Developer Mode*. Затем установите SDK: *Help → SDK Installers*.
+2. На GitHub откройте *Releases → Draft a new release*. В названии укажите `msfs-sdk`, тег `msfs-sdk`.
+3. Приложите два файла из папки SDK:
+   - `SimConnect SDK\lib\SimConnect.dll`
+   - `SimConnect SDK\lib\managed\Microsoft.FlightSimulator.SimConnect.dll`
+4. Нажмите **Save draft**, не публикуйте. Черновик видят только владельцы репозитория.
+
+После этого:
+- **Разовая сборка:** *Actions → Release → Run workflow*, готовый архив появится в артефактах запуска.
+- **Релиз:** `git tag v0.1.0 && git push origin v0.1.0` создаст GitHub Release с архивом `SkyPilot-0.1.0-win-x64.zip`.
+
 ## Первый запуск
 
 1. Запустите MSFS и загрузитесь в самолёт. В строке состояния SkyPilot появится «MSFS: подключён».
