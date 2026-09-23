@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Compile-time stand-in for Microsoft.FlightSimulator.SimConnect.dll from the MSFS SDK.
+    It exists only so SkyPilot builds (and CI runs) on machines without the SDK; it cannot talk
+    to a simulator. Release builds must be made with the real SDK installed (see README).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>Microsoft.FlightSimulator.SimConnect</AssemblyName>
+    <RootNamespace>Microsoft.FlightSimulator.SimConnect</RootNamespace>
+    <Nullable>disable</Nullable>
+    <NoWarn>$(NoWarn);CS1591;CA1822</NoWarn>
+  </PropertyGroup>
+</Project>

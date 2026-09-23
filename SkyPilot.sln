@@ -1,0 +1,52 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{127D083E-1780-4EB2-A425-F6A2EEDA85C6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SkyPilot.Core", "src\SkyPilot.Core\SkyPilot.Core.csproj", "{9F90E8B4-1A29-4E4B-9775-5E0827AA0150}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SkyPilot.SimConnect", "src\SkyPilot.SimConnect\SkyPilot.SimConnect.csproj", "{A5616DB3-21CF-441E-802C-E22801EA77A8}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tools", "tools", "{7E44334B-A3F9-4CC5-A1E7-865AB299DDD5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SimConnectStub", "tools\SimConnectStub\SimConnectStub.csproj", "{F035C3F5-8140-4D3B-AD8D-817572C36779}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{91FF8BB7-375B-4739-B5EE-487E53BA2B39}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SkyPilot.Core.Tests", "tests\SkyPilot.Core.Tests\SkyPilot.Core.Tests.csproj", "{30C633CA-519D-477C-AB2E-B3E01C4FE3DD}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{9F90E8B4-1A29-4E4B-9775-5E0827AA0150}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9F90E8B4-1A29-4E4B-9775-5E0827AA0150}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9F90E8B4-1A29-4E4B-9775-5E0827AA0150}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9F90E8B4-1A29-4E4B-9775-5E0827AA0150}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A5616DB3-21CF-441E-802C-E22801EA77A8}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{A5616DB3-21CF-441E-802C-E22801EA77A8}.Debug|Any CPU.Build.0 = Debug|x64
+		{A5616DB3-21CF-441E-802C-E22801EA77A8}.Release|Any CPU.ActiveCfg = Release|x64
+		{A5616DB3-21CF-441E-802C-E22801EA77A8}.Release|Any CPU.Build.0 = Release|x64
+		{F035C3F5-8140-4D3B-AD8D-817572C36779}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F035C3F5-8140-4D3B-AD8D-817572C36779}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F035C3F5-8140-4D3B-AD8D-817572C36779}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F035C3F5-8140-4D3B-AD8D-817572C36779}.Release|Any CPU.Build.0 = Release|Any CPU
+		{30C633CA-519D-477C-AB2E-B3E01C4FE3DD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{30C633CA-519D-477C-AB2E-B3E01C4FE3DD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{30C633CA-519D-477C-AB2E-B3E01C4FE3DD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{30C633CA-519D-477C-AB2E-B3E01C4FE3DD}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{9F90E8B4-1A29-4E4B-9775-5E0827AA0150} = {127D083E-1780-4EB2-A425-F6A2EEDA85C6}
+		{A5616DB3-21CF-441E-802C-E22801EA77A8} = {127D083E-1780-4EB2-A425-F6A2EEDA85C6}
+		{F035C3F5-8140-4D3B-AD8D-817572C36779} = {7E44334B-A3F9-4CC5-A1E7-865AB299DDD5}
+		{30C633CA-519D-477C-AB2E-B3E01C4FE3DD} = {91FF8BB7-375B-4739-B5EE-487E53BA2B39}
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,394 @@
+using System.Collections.Concurrent;
+using System.Text.RegularExpressions;
+using SkyPilot.Core.Fsd;
+using SkyPilot.Core.Matching;
+using SkyPilot.Core.Model;
+using SkyPilot.Core.Simulation;
+
+namespace SkyPilot.Core.Session;
+
+/// <summary>
+/// A pilot's session on SkyNetwork: sends the user's position, draws other pilots in the
+/// simulator, and routes text messages. Events are raised on background threads.
+/// </summary>
+public sealed partial class NetworkSession : IAsyncDisposable
+{
+    public static readonly TimeSpan PositionInterval = TimeSpan.FromSeconds(5);
+    public static readonly TimeSpan RenderInterval = TimeSpan.FromMilliseconds(50);
+    public static readonly TimeSpan StaleAfter = TimeSpan.FromSeconds(20);
+    public static readonly TimeSpan ModelInfoWait = TimeSpan.FromSeconds(3);
+    public static readonly TimeSpan IdentDuration = TimeSpan.FromSeconds(18);
+
+    private readonly ISimulator _sim;
+    private readonly ModelMatcher _matcher;
+    private readonly Func<DateTime> _clock;
+    private readonly object _gate = new();
+    private readonly Dictionary<string, RemoteAircraft> _traffic = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, AtcStation> _atc = new(StringComparer.OrdinalIgnoreCase);
+
+    private FsdClient? _fsd;
+    private ConnectInfo? _info;
+    private Timer? _positionTimer;
+    private Timer? _renderTimer;
+    private OwnAircraftData? _own;
+    private DateTime _identUntil;
+
+    public NetworkSession(ISimulator sim, ModelMatcher matcher, Func<DateTime>? clock = null)
+    {
+        _sim = sim;
+        _matcher = matcher;
+        _clock = clock ?? (() => DateTime.UtcNow);
+        _sim.OwnAircraftUpdated += (_, data) => _own = data;
+        _sim.AircraftCreateFailed += OnAircraftCreateFailed;
+        _sim.ConnectionChanged += OnSimConnectionChanged;
+    }
+
+    public event EventHandler<ChatMessage>? MessageReceived;
+    public event EventHandler<bool>? ConnectionChanged;
+    public event EventHandler? ControllersChanged;
+    public event EventHandler? TrafficChanged;
+
+    public bool IsConnected => _fsd?.IsConnected == true;
+    public string Callsign => _info?.Callsign ?? "";
+    public OwnAircraftData? OwnAircraft => _own;
+    public bool ModeC { get; set; }
+    public bool IsIdenting => _clock() < _identUntil;
+
+    public TransponderMode TransponderMode =>
+        IsIdenting ? TransponderMode.Ident : ModeC ? TransponderMode.ModeC : TransponderMode.Standby;
+
+    public IReadOnlyList<AtcStation> Controllers =>
+        _atc.Values.OrderBy(a => a.FrequencyKhz).ThenBy(a => a.Callsign).ToList();
+
+    public IReadOnlyList<RemoteAircraft> Traffic
+    {
+        get { lock (_gate) return _traffic.Values.OrderBy(t => t.Callsign).ToList(); }
+    }
+
+    [GeneratedRegex("^[A-Z0-9_-]{2,12}$")]
+    private static partial Regex CallsignRegex();
+
+    public static bool IsValidCallsign(string callsign) => CallsignRegex().IsMatch(callsign);
+
+    public async Task ConnectAsync(ConnectInfo info, CancellationToken ct = default)
+    {
+        if (IsConnected) throw new InvalidOperationException("Уже подключено");
+        if (!_sim.IsConnected || _own == null)
+            throw new FsdLoginException("Симулятор не подключён. Запустите MSFS и загрузитесь в самолёт.");
+        info = info with { Callsign = info.Callsign.Trim().ToUpperInvariant(), TypeCode = info.TypeCode.Trim().ToUpperInvariant() };
+        if (!IsValidCallsign(info.Callsign)) throw new FsdLoginException("Неверный позывной");
+        if (info.TypeCode.Length is < 2 or > 4) throw new FsdLoginException("Укажите ICAO-код типа ВС (например A20N)");
+
+        var fsd = new FsdClient();
+        fsd.PacketReceived += OnPacket;
+        fsd.Disconnected += OnFsdDisconnected;
+        _fsd = fsd;
+        _info = info;
+        try
+        {
+            await fsd.ConnectAsync(info.Host, info.Port,
+                Packets.PilotLogin(info.Callsign, info.Cid, info.Password, info.RealName, simType: 1), ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            _fsd = null;
+            _info = null;
+            await fsd.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+        _positionTimer = new Timer(_ => _ = SendPositionAsync(), null, TimeSpan.Zero, PositionInterval);
+        _renderTimer = new Timer(_ => RenderTick(), null, RenderInterval, RenderInterval);
+        ConnectionChanged?.Invoke(this, true);
+        Info($"Подключено к {info.Host} как {info.Callsign}");
+    }
+
+    public async Task DisconnectAsync()
+    {
+        var fsd = _fsd;
+        if (fsd == null) return;
+        await fsd.DisconnectAsync(Packets.PilotLogoff(Callsign, _info!.Cid)).ConfigureAwait(false);
+        // OnFsdDisconnected does the cleanup.
+    }
+
+    private void OnFsdDisconnected(object? sender, string reason)
+    {
+        if (!ReferenceEquals(sender, _fsd)) return;
+        _positionTimer?.Dispose();
+        _renderTimer?.Dispose();
+        _positionTimer = _renderTimer = null;
+        _fsd = null;
+        lock (_gate)
+        {
+            _traffic.Clear();
+            if (_sim.IsConnected) _sim.RemoveAllAircraft();
+        }
+        _atc.Clear();
+        ControllersChanged?.Invoke(this, EventArgs.Empty);
+        TrafficChanged?.Invoke(this, EventArgs.Empty);
+        Info(reason);
+        ConnectionChanged?.Invoke(this, false);
+    }
+
+    private void OnSimConnectionChanged(object? sender, bool connected)
+    {
+        if (connected)
+        {
+            // Traffic must be re-created after the simulator reconnects.
+            lock (_gate)
+                foreach (var t in _traffic.Values) t.InSimulator = false;
+            return;
+        }
+        _own = null;
+        if (IsConnected)
+        {
+            Error("Потеряна связь с симулятором — отключаюсь от сети");
+            _ = DisconnectAsync();
+        }
+    }
+
+    // ---- outgoing -------------------------------------------------------------
+
+    internal async Task SendPositionAsync()
+    {
+        var fsd = _fsd;
+        var own = _own;
+        if (fsd == null || own == null) return;
+        await fsd.SendAsync(Packets.Position(Callsign, TransponderMode, own.TransponderCode, own.State, own.PressureAltitudeFeet))
+            .ConfigureAwait(false);
+    }
+
+    public async Task SendRadioAsync(string text)
+    {
+        var fsd = RequireConnection();
+        var own = _own ?? throw new InvalidOperationException("Нет данных от симулятора");
+        if (own.Com1Khz is < 118000 or > 136990) throw new InvalidOperationException("COM1 не настроен");
+        await fsd.SendAsync(Packets.TextMessage(Callsign, Frequency.ToFsdAddress(own.Com1Khz), text)).ConfigureAwait(false);
+        Raise(new ChatMessage(MessageKind.Radio, Callsign, text, _clock(), FrequencyKhz: own.Com1Khz, Outgoing: true));
+    }
+
+    public async Task SendPrivateAsync(string to, string text)
+    {
+        var fsd = RequireConnection();
+        to = to.Trim().ToUpperInvariant();
+        if (!IsValidCallsign(to)) throw new InvalidOperationException("Неверный позывной получателя");
+        await fsd.SendAsync(Packets.TextMessage(Callsign, to, text)).ConfigureAwait(false);
+        Raise(new ChatMessage(MessageKind.Private, Callsign, text, _clock(), Peer: to, Outgoing: true));
+    }
+
+    public async Task SendFlightPlanAsync(FlightPlan plan)
+    {
+        var fsd = RequireConnection();
+        if (plan.Departure.Length == 0 || plan.Destination.Length == 0)
+            throw new InvalidOperationException("Укажите аэропорты вылета и назначения");
+        await fsd.SendAsync(Packets.FlightPlan(Callsign, plan)).ConfigureAwait(false);
+        Info($"План полёта {plan.Departure} → {plan.Destination} отправлен");
+    }
+
+    public void Ident()
+    {
+        _identUntil = _clock() + IdentDuration;
+        _ = SendPositionAsync();
+    }
+
+    private FsdClient RequireConnection() => _fsd ?? throw new InvalidOperationException("Нет подключения к сети");
+
+    // ---- incoming ---------------------------------------------------------------
+
+    internal void OnPacket(object? sender, FsdPacket p)
+    {
+        switch (p.Command)
+        {
+            case "@":
+                if (Packets.ParsePosition(p) is { } pos && !pos.Callsign.Equals(Callsign, StringComparison.OrdinalIgnoreCase))
+                    OnPilotPosition(pos);
+                break;
+            case "%":
+                if (Packets.ParseAtcPosition(p) is { } atc)
+                {
+                    bool isNew = !_atc.ContainsKey(atc.Callsign);
+                    _atc[atc.Callsign] = new AtcStation(atc.Callsign, atc.FrequencyKhz, atc.Facility, _clock());
+                    if (isNew) ControllersChanged?.Invoke(this, EventArgs.Empty);
+                }
+                break;
+            case "#DP":
+                RemoveTraffic(p[0]);
+                break;
+            case "#DA":
+                if (_atc.TryRemove(p[0], out _)) ControllersChanged?.Invoke(this, EventArgs.Empty);
+                break;
+            case "#TM":
+                OnTextMessage(p[0], p[1], string.Join(':', p.Fields.Skip(2)));
+                break;
+            case "#SB":
+                OnSquawkBox(p);
+                break;
+            case "$PI":
+                if (IsToMe(p[1])) _ = _fsd?.SendAsync($"$PO{Callsign}:{p[0]}:{p[2]}");
+                break;
+            case "$CQ":
+                OnClientQuery(p);
+                break;
+            case "$ER":
+                Error($"Сервер: {p[4]} {p[3]}".Trim());
+                break;
+        }
+    }
+
+    private bool IsToMe(string to) => to.Equals(Callsign, StringComparison.OrdinalIgnoreCase);
+
+    private void OnTextMessage(string from, string to, string text)
+    {
+        var now = _clock();
+        if (from.Equals("SERVER", StringComparison.OrdinalIgnoreCase))
+            Raise(new ChatMessage(MessageKind.Server, from, text, now));
+        else if (IsToMe(to))
+            Raise(new ChatMessage(MessageKind.Private, from, text, now, Peer: from.ToUpperInvariant()));
+        else if (to == "*")
+            Raise(new ChatMessage(MessageKind.Broadcast, from, text, now));
+        else if (Frequency.TryParseFsdAddress(to, out var khz) && _own is { } own &&
+                 (Frequency.SameChannel(khz, own.Com1Khz) || Frequency.SameChannel(khz, own.Com2Khz)))
+            Raise(new ChatMessage(MessageKind.Radio, from, text, now, FrequencyKhz: khz));
+    }
+
+    private void OnSquawkBox(FsdPacket p)
+    {
+        if (!IsToMe(p[1])) return;
+        if (p[2] == "PIR" && _info != null)
+        {
+            _ = _fsd?.SendAsync(Packets.PlaneInfoResponse(Callsign, p[0], _info.TypeCode, Packets.AirlineFromCallsign(Callsign)));
+        }
+        else if (Packets.ParsePlaneInfo(p) is { } info)
+        {
+            lock (_gate)
+            {
+                if (!_traffic.TryGetValue(p[0], out var t)) return;
+                bool changed = !string.Equals(t.Equipment, info.Equipment, StringComparison.OrdinalIgnoreCase);
+                t.Equipment = info.Equipment;
+                t.Airline = info.Airline.Length > 0 ? info.Airline : Packets.AirlineFromCallsign(t.Callsign);
+                // The aircraft was already drawn with a guessed model: redraw with the right one.
+                if (changed && t.InSimulator && _matcher.Match(t.Equipment, t.Airline) != t.ModelTitle)
+                {
+                    _sim.RemoveAircraft(t.Callsign);
+                    t.InSimulator = false;
+                }
+            }
+            TrafficChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private void OnClientQuery(FsdPacket p)
+    {
+        if (!IsToMe(p[1]) || _fsd == null || _info == null) return;
+        switch (p[2])
+        {
+            case "RN":
+                _ = _fsd.SendAsync($"$CR{Callsign}:{p[0]}:RN:{Packets.Clean(_info.RealName)}::1");
+                break;
+            case "CAPS":
+                _ = _fsd.SendAsync($"$CR{Callsign}:{p[0]}:CAPS");
+                break;
+            case "INF":
+                _ = _fsd.SendAsync(Packets.TextMessage(Callsign, p[0],
+                    $"SkyPilot {typeof(NetworkSession).Assembly.GetName().Version} / {_sim.Name}"));
+                break;
+        }
+    }
+
+    private void OnPilotPosition(PilotPosition pos)
+    {
+        bool added = false;
+        lock (_gate)
+        {
+            if (!_traffic.TryGetValue(pos.Callsign, out var t))
+            {
+                t = new RemoteAircraft(pos.Callsign) { Airline = Packets.AirlineFromCallsign(pos.Callsign) };
+                _traffic[pos.Callsign] = t;
+                added = true;
+            }
+            t.OnPositionReport(pos.State, _clock());
+        }
+        if (added)
+        {
+            _ = _fsd?.SendAsync(Packets.PlaneInfoRequest(Callsign, pos.Callsign));
+            TrafficChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private void RemoveTraffic(string callsign)
+    {
+        lock (_gate)
+        {
+            if (!_traffic.Remove(callsign, out var t)) return;
+            if (t.InSimulator) _sim.RemoveAircraft(t.Callsign);
+        }
+        TrafficChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnAircraftCreateFailed(object? sender, AircraftCreateFailedEventArgs e)
+    {
+        lock (_gate)
+        {
+            if (!_traffic.TryGetValue(e.Callsign, out var t)) return;
+            if (e.ModelTitle == ModelMatcher.FallbackTitle)
+            {
+                t.InSimulator = true; // give up; don't retry every frame
+                Error($"Не удалось показать {e.Callsign}: модель «{e.ModelTitle}» не найдена");
+                return;
+            }
+            t.ModelTitle = ModelMatcher.FallbackTitle;
+            _sim.AddAircraft(t.Callsign, t.ModelTitle, t.Render(_clock()));
+        }
+    }
+
+    // ---- traffic rendering -----------------------------------------------------------
+
+    internal void RenderTick()
+    {
+        var now = _clock();
+        bool changed = false;
+        lock (_gate)
+        {
+            foreach (var t in _traffic.Values.ToList())
+            {
+                if (now - t.LastUpdate > StaleAfter)
+                {
+                    _traffic.Remove(t.Callsign);
+                    if (t.InSimulator) _sim.RemoveAircraft(t.Callsign);
+                    changed = true;
+                    continue;
+                }
+                if (!_sim.IsConnected) continue;
+                if (!t.InSimulator)
+                {
+                    if (t.Equipment.Length == 0 && now - t.FirstSeen < ModelInfoWait) continue;
+                    t.ModelTitle = _matcher.Match(t.Equipment, t.Airline);
+                    _sim.AddAircraft(t.Callsign, t.ModelTitle, t.Render(now));
+                    t.InSimulator = true;
+                }
+                else
+                {
+                    _sim.UpdateAircraft(t.Callsign, t.Render(now));
+                }
+            }
+        }
+        foreach (var a in _atc.Values)
+        {
+            if (now - a.LastSeen > TimeSpan.FromSeconds(60) && _atc.TryRemove(a.Callsign, out _))
+                ControllersChanged?.Invoke(this, EventArgs.Empty);
+        }
+        if (changed) TrafficChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    // ---- helpers ------------------------------------------------------------------------
+
+    private void Raise(ChatMessage m) => MessageReceived?.Invoke(this, m);
+    internal void Info(string text) => Raise(new ChatMessage(MessageKind.Info, "SkyPilot", text, _clock()));
+    internal void Error(string text) => Raise(new ChatMessage(MessageKind.Error, "SkyPilot", text, _clock()));
+
+    public async ValueTask DisposeAsync()
+    {
+        await DisconnectAsync().ConfigureAwait(false);
+        _positionTimer?.Dispose();
+        _renderTimer?.Dispose();
+    }
+}
