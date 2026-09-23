@@ -8,7 +8,6 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
-      # No MSFS SDK on CI: SkyPilot.SimConnect builds against tools/SimConnectStub.
       - run: dotnet build SkyPilot.sln -c Release
       - run: dotnet test tests/SkyPilot.Core.Tests -c Release --no-build
 

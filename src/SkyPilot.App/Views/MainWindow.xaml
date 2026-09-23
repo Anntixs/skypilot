@@ -15,7 +15,7 @@
         <Button Content="Настройки" Click="OnSettingsClick"/>
       </StackPanel>
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-        <TextBlock Text="{Binding SimStatus}" Foreground="{StaticResource Muted}" Margin="0,0,12,0"/>
+        <TextBlock Text="{Binding SimStatus}" Foreground="{StaticResource Muted}" Margin="0,0,12,0" ToolTip="{Binding SimError}"/>
         <TextBlock Text="{Binding NetStatus}" FontWeight="SemiBold"/>
       </StackPanel>
     </DockPanel>

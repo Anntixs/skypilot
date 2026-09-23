@@ -1,45 +1,18 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Talks to MSFS 2020/2024 through the SimConnect C API. SimConnect.dll is loaded at run time
+    (next to SkyPilot.exe or from the MSFS SDK), so no SDK is needed to build.
+  -->
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
     <RootNamespace>SkyPilot.SimConnect</RootNamespace>
-  </PropertyGroup>
-
-  <!--
-    Locate SimConnect: pass SimConnectManaged / SimConnectNative directly, or the SDK root via the
-    MsfsSdk property or the MSFS2024_SDK / MSFS_SDK environment variables.
-  -->
-  <PropertyGroup>
-    <MsfsSdk Condition="'$(MsfsSdk)' == ''">$(MSFS2024_SDK)</MsfsSdk>
-    <MsfsSdk Condition="'$(MsfsSdk)' == ''">$(MSFS_SDK)</MsfsSdk>
-    <SimConnectManaged Condition="'$(SimConnectManaged)' == ''">$(MsfsSdk)\SimConnect SDK\lib\managed\Microsoft.FlightSimulator.SimConnect.dll</SimConnectManaged>
-    <SimConnectNative Condition="'$(SimConnectNative)' == ''">$(MsfsSdk)\SimConnect SDK\lib\SimConnect.dll</SimConnectNative>
-    <HasMsfsSdk Condition="Exists('$(SimConnectManaged)') And Exists('$(SimConnectNative)')">true</HasMsfsSdk>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\SkyPilot.Core\SkyPilot.Core.csproj" />
   </ItemGroup>
-
-  <ItemGroup Condition="'$(HasMsfsSdk)' == 'true'">
-    <Reference Include="Microsoft.FlightSimulator.SimConnect">
-      <HintPath>$(SimConnectManaged)</HintPath>
-    </Reference>
-    <None Include="$(SimConnectNative)" Link="SimConnect.dll" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-
-  <ItemGroup Condition="'$(HasMsfsSdk)' != 'true'">
-    <ProjectReference Include="..\..\tools\SimConnectStub\SimConnectStub.csproj" />
-  </ItemGroup>
-
-  <!-- Release builds pass -p:RequireMsfsSdk=true so a build without SimConnect can never be shipped. -->
-  <Target Name="RequireMsfsSdk" BeforeTargets="Build" Condition="'$(HasMsfsSdk)' != 'true' And '$(RequireMsfsSdk)' == 'true'">
-    <Error Text="SkyPilot: SimConnect not found (SimConnectManaged='$(SimConnectManaged)')." />
-  </Target>
-
-  <Target Name="WarnNoMsfsSdk" BeforeTargets="Build" Condition="'$(HasMsfsSdk)' != 'true'">
-    <Message Importance="high" Text="SkyPilot: MSFS SDK not found (set MSFS_SDK) — building with the SimConnect stub, the simulator connection will not work." />
-  </Target>
 </Project>

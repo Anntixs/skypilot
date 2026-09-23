@@ -9,6 +9,7 @@ public sealed record AtcRow(string Callsign, string Frequency, string Facility, 
 public sealed class MainViewModel : Observable
 {
     private bool _simConnected;
+    private string? _simError;
     private bool _netConnected;
     private string _callsign = "";
     private string _com1 = "---.---";
@@ -66,7 +67,19 @@ public sealed class MainViewModel : Observable
         }
     }
 
-    public string SimStatus => SimConnected ? "MSFS: подключён" : "MSFS: ожидание симулятора…";
+    /// <summary>Why the simulator cannot be reached (e.g. SimConnect.dll missing), or null.</summary>
+    public string? SimError
+    {
+        get => _simError;
+        set
+        {
+            if (Set(ref _simError, value)) OnStatusChanged();
+        }
+    }
+
+    public string SimStatus => SimConnected ? "MSFS: подключён"
+        : SimError != null ? "MSFS: нет SimConnect.dll"
+        : "MSFS: ожидание симулятора…";
     public string NetStatus => NetConnected ? $"В сети: {Callsign}" : "Не в сети";
     public string ConnectButtonText => NetConnected ? "Отключиться" : "Подключиться";
 

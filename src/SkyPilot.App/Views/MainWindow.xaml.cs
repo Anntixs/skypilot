@@ -54,11 +54,11 @@ public partial class MainWindow : Window
 
         _simRetry.Tick += (_, _) =>
         {
-            if (!_sim.IsConnected) _sim.Connect();
+            TryConnectSim();
             _vm.Identing = _session.IsIdenting;
         };
         _simRetry.Start();
-        _sim.Connect();
+        TryConnectSim();
 
         _vm.RadioTab.Add(new ChatMessage(MessageKind.Info, "SkyPilot",
             "Добро пожаловать в SkyPilot! Запустите MSFS, затем нажмите «Подключиться». Команды: .help", DateTime.UtcNow));
@@ -71,6 +71,15 @@ public partial class MainWindow : Window
     }
 
     private void Ui(Action action) => Dispatcher.BeginInvoke(action);
+
+    private void TryConnectSim()
+    {
+        if (_sim.IsConnected) return;
+        _sim.Connect();
+        if (_sim.LastError != null && _vm.SimError == null)
+            _vm.RadioTab.Add(new ChatMessage(MessageKind.Error, "SkyPilot", _sim.LastError, DateTime.UtcNow));
+        _vm.SimError = _sim.LastError;
+    }
 
     private void OnMessage(ChatMessage m)
     {
