@@ -12,13 +12,21 @@ public sealed class MainViewModel : Observable
     private string? _simError;
     private bool _netConnected;
     private string _callsign = "";
+    private int _com1Khz, _com2Khz;
     private string _com1 = "---.---";
     private string _com2 = "---.---";
     private string _squawk = "----";
     private bool _modeC;
     private bool _identing;
+    private bool _com1Rx = true, _com2Rx = true;
+    private int _txRadio = 1;
     private int _trafficCount;
+    private bool _atcVisible = true;
+    private bool _topmost;
+    private FlightPlan? _flightPlan;
+    private string _utcTime = "";
     private ChatTab? _selectedTab;
+    private List<AtcStation> _stations = [];
 
     public MainViewModel()
     {
@@ -40,69 +48,105 @@ public sealed class MainViewModel : Observable
         }
     }
 
-    public bool SimConnected
-    {
-        get => _simConnected;
-        set
-        {
-            if (Set(ref _simConnected, value)) OnStatusChanged();
-        }
-    }
+    // ---- connection -----------------------------------------------------------------
 
-    public bool NetConnected
-    {
-        get => _netConnected;
-        set
-        {
-            if (Set(ref _netConnected, value)) OnStatusChanged();
-        }
-    }
-
-    public string Callsign
-    {
-        get => _callsign;
-        set
-        {
-            if (Set(ref _callsign, value)) OnStatusChanged();
-        }
-    }
+    public bool SimConnected { get => _simConnected; set { if (Set(ref _simConnected, value)) OnStatusChanged(); } }
 
     /// <summary>Why the simulator cannot be reached (e.g. SimConnect.dll missing), or null.</summary>
-    public string? SimError
-    {
-        get => _simError;
-        set
-        {
-            if (Set(ref _simError, value)) OnStatusChanged();
-        }
-    }
+    public string? SimError { get => _simError; set { if (Set(ref _simError, value)) OnStatusChanged(); } }
 
-    public string SimStatus => SimConnected ? "MSFS: подключён"
-        : SimError != null ? "MSFS: нет SimConnect.dll"
-        : "MSFS: ожидание симулятора…";
-    public string NetStatus => NetConnected ? $"В сети: {Callsign}" : "Не в сети";
-    public string ConnectButtonText => NetConnected ? "Отключиться" : "Подключиться";
+    public bool NetConnected { get => _netConnected; set { if (Set(ref _netConnected, value)) OnStatusChanged(); } }
+    public string Callsign { get => _callsign; set { if (Set(ref _callsign, value)) OnStatusChanged(); } }
+
+    public string SimStatus => SimConnected ? "MSFS подключён"
+        : SimError != null ? "Нет SimConnect.dll"
+        : "Ожидание MSFS…";
+
+    public string ConnectButtonText => NetConnected ? "ONLINE" : "OFFLINE";
+    public string WindowTitle => NetConnected ? $"SkyPilot — {Callsign}" : "SkyPilot";
 
     private void OnStatusChanged()
     {
-        Raise(nameof(SimStatus));
-        Raise(nameof(NetStatus));
-        Raise(nameof(ConnectButtonText));
+        RaisePropertyChanged(nameof(SimStatus));
+        RaisePropertyChanged(nameof(ConnectButtonText));
+        RaisePropertyChanged(nameof(WindowTitle));
     }
+
+    // ---- radios -----------------------------------------------------------------------
 
     public string Com1 { get => _com1; set => Set(ref _com1, value); }
     public string Com2 { get => _com2; set => Set(ref _com2, value); }
     public string Squawk { get => _squawk; set => Set(ref _squawk, value); }
-    public bool ModeC { get => _modeC; set => Set(ref _modeC, value); }
+    public bool ModeC { get => _modeC; set { if (Set(ref _modeC, value)) RaisePropertyChanged(nameof(ModeCText)); } }
+    public string ModeCText => ModeC ? "MODE C" : "STBY";
     public bool Identing { get => _identing; set => Set(ref _identing, value); }
-    public int TrafficCount { get => _trafficCount; set => Set(ref _trafficCount, value); }
+
+    public bool Com1Rx { get => _com1Rx; set => Set(ref _com1Rx, value); }
+    public bool Com2Rx { get => _com2Rx; set => Set(ref _com2Rx, value); }
+
+    public int TxRadio
+    {
+        get => _txRadio;
+        set
+        {
+            if (!Set(ref _txRadio, value)) return;
+            RaisePropertyChanged(nameof(Com1Tx));
+            RaisePropertyChanged(nameof(Com2Tx));
+            RaisePropertyChanged(nameof(TxFrequency));
+        }
+    }
+
+    public bool Com1Tx { get => TxRadio == 1; set { if (value) TxRadio = 1; else RaisePropertyChanged(nameof(Com1Tx)); } }
+    public bool Com2Tx { get => TxRadio == 2; set { if (value) TxRadio = 2; else RaisePropertyChanged(nameof(Com2Tx)); } }
+
+    /// <summary>The frequency text goes out on (shown above the chat).</summary>
+    public string TxFrequency => TxRadio == 2 ? Com2 : Com1;
+
+    /// <summary>ATC station tuned on each radio, or "-".</summary>
+    public string Com1Station => StationOn(_com1Khz);
+    public string Com2Station => StationOn(_com2Khz);
+
+    private string StationOn(int khz) =>
+        _stations.FirstOrDefault(s => Frequency.SameChannel(s.FrequencyKhz, khz))?.Callsign ?? "-";
 
     public void UpdateRadios(OwnAircraftData own)
     {
+        _com1Khz = own.Com1Khz;
+        _com2Khz = own.Com2Khz;
         Com1 = Frequency.Format(own.Com1Khz);
         Com2 = Frequency.Format(own.Com2Khz);
         Squawk = own.TransponderCode.ToString("0000");
+        RaisePropertyChanged(nameof(TxFrequency));
+        RaisePropertyChanged(nameof(Com1Station));
+        RaisePropertyChanged(nameof(Com2Station));
     }
+
+    public int TrafficCount { get => _trafficCount; set => Set(ref _trafficCount, value); }
+
+    // ---- flight plan -------------------------------------------------------------------
+
+    public FlightPlan? FlightPlan
+    {
+        get => _flightPlan;
+        set
+        {
+            if (!Set(ref _flightPlan, value)) return;
+            RaisePropertyChanged(nameof(HasFlightPlan));
+            RaisePropertyChanged(nameof(FlightPlanText));
+        }
+    }
+
+    public bool HasFlightPlan => FlightPlan != null;
+
+    public string FlightPlanText => FlightPlan is { } p
+        ? $"{p.Departure} → {p.Destination}   {p.AircraftType}   {p.CruiseAltitude}"
+        : "Нет плана полёта";
+
+    // ---- misc ----------------------------------------------------------------------------
+
+    public bool AtcVisible { get => _atcVisible; set => Set(ref _atcVisible, value); }
+    public bool Topmost { get => _topmost; set => Set(ref _topmost, value); }
+    public string UtcTime { get => _utcTime; set => Set(ref _utcTime, value); }
 
     public ChatTab GetPrivateTab(string peer)
     {
@@ -117,10 +161,11 @@ public sealed class MainViewModel : Observable
 
     public void SetControllers(IEnumerable<AtcStation> stations)
     {
+        _stations = stations.ToList();
         Controllers.Clear();
-        foreach (var s in stations)
+        foreach (var s in _stations)
             Controllers.Add(new AtcRow(s.Callsign, Frequency.Format(s.FrequencyKhz), AtcStation.FacilityName(s.Facility), s.FrequencyKhz));
+        RaisePropertyChanged(nameof(Com1Station));
+        RaisePropertyChanged(nameof(Com2Station));
     }
-
-    private void Raise(string name) => RaisePropertyChanged(name);
 }

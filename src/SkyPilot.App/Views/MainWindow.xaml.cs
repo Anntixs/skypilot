@@ -1,6 +1,8 @@
 using System.Collections.Specialized;
+using System.Diagnostics;
 using System.IO;
 using System.Media;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -12,12 +14,16 @@ using SkyPilot.Core.Matching;
 using SkyPilot.Core.Model;
 using SkyPilot.Core.Session;
 using SkyPilot.Core.Settings;
+using SkyPilot.Core.Web;
 using SkyPilot.SimConnect;
 
 namespace SkyPilot.App.Views;
 
 public partial class MainWindow : Window
 {
+    private static readonly TimeSpan FlightPlanPollInterval = TimeSpan.FromSeconds(30);
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
+
     private readonly string _settingsPath = Path.Combine(AppSettings.DefaultDirectory, "settings.json");
     private readonly DpapiProtector _protector = new();
     private readonly AppSettings _settings;
@@ -26,16 +32,18 @@ public partial class MainWindow : Window
     private readonly NetworkSession _session;
     private readonly CommandProcessor _commands;
     private readonly DispatcherTimer _simRetry = new() { Interval = TimeSpan.FromSeconds(3) };
+    private readonly DispatcherTimer _clock = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly List<string> _history = [];
     private int _historyIndex;
-    private FlightPlan? _lastPlan;
+    private DateTime _nextPlanPoll;
+    private FlightPlan? _sentPlan;
 
     public MainWindow()
     {
         InitializeComponent();
         DataContext = _vm;
         _settings = AppSettings.Load(_settingsPath);
-        Topmost = _settings.KeepWindowOnTop;
+        _vm.Topmost = _settings.KeepWindowOnTop;
 
         var matcher = ModelMatcher.Load(Path.Combine(AppSettings.DefaultDirectory, "model-matching.json"));
         _session = new NetworkSession(_sim, matcher);
@@ -43,11 +51,7 @@ public partial class MainWindow : Window
 
         _sim.ConnectionChanged += (_, connected) => Ui(() => _vm.SimConnected = connected);
         _sim.OwnAircraftUpdated += (_, own) => Ui(() => _vm.UpdateRadios(own));
-        _session.ConnectionChanged += (_, connected) => Ui(() =>
-        {
-            _vm.NetConnected = connected;
-            _vm.Callsign = _session.Callsign;
-        });
+        _session.ConnectionChanged += (_, connected) => Ui(() => OnNetworkConnectionChanged(connected));
         _session.MessageReceived += (_, m) => Ui(() => OnMessage(m));
         _session.ControllersChanged += (_, _) => Ui(() => _vm.SetControllers(_session.Controllers));
         _session.TrafficChanged += (_, _) => Ui(() => _vm.TrafficCount = _session.Traffic.Count);
@@ -60,10 +64,20 @@ public partial class MainWindow : Window
         _simRetry.Start();
         TryConnectSim();
 
+        _clock.Tick += async (_, _) =>
+        {
+            _vm.UtcTime = DateTime.UtcNow.ToString("HH:mm");
+            if (_session.IsConnected && DateTime.UtcNow >= _nextPlanPoll) await RefreshFlightPlanAsync(quiet: true);
+        };
+        _vm.UtcTime = DateTime.UtcNow.ToString("HH:mm");
+        _clock.Start();
+
         _vm.RadioTab.Add(new ChatMessage(MessageKind.Info, "SkyPilot",
-            "Добро пожаловать в SkyPilot! Запустите MSFS, затем нажмите «Подключиться». Команды: .help", DateTime.UtcNow));
+            "Добро пожаловать в SkyPilot! Запустите MSFS, затем нажмите OFFLINE, чтобы подключиться. Команды: .help", DateTime.UtcNow));
         Closing += (_, _) =>
         {
+            _settings.KeepWindowOnTop = _vm.Topmost;
+            _settings.Save(_settingsPath);
             // Send the logoff packet before the process exits (the core never resumes on the UI thread).
             _session.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(2));
             _sim.Dispose();
@@ -72,13 +86,23 @@ public partial class MainWindow : Window
 
     private void Ui(Action action) => Dispatcher.BeginInvoke(action);
 
+    private void Info(string text) => _vm.RadioTab.Add(new ChatMessage(MessageKind.Info, "SkyPilot", text, DateTime.UtcNow));
+    private void Error(string text) => _vm.RadioTab.Add(new ChatMessage(MessageKind.Error, "SkyPilot", text, DateTime.UtcNow));
+
     private void TryConnectSim()
     {
         if (_sim.IsConnected) return;
         _sim.Connect();
-        if (_sim.LastError != null && _vm.SimError == null)
-            _vm.RadioTab.Add(new ChatMessage(MessageKind.Error, "SkyPilot", _sim.LastError, DateTime.UtcNow));
+        if (_sim.LastError != null && _vm.SimError == null) Error(_sim.LastError);
         _vm.SimError = _sim.LastError;
+    }
+
+    private async void OnNetworkConnectionChanged(bool connected)
+    {
+        _vm.NetConnected = connected;
+        _vm.Callsign = _session.Callsign;
+        _sentPlan = null;
+        if (connected) await RefreshFlightPlanAsync(quiet: true);
     }
 
     private void OnMessage(ChatMessage m)
@@ -97,6 +121,8 @@ public partial class MainWindow : Window
         _vm.RadioTab.Add(m);
         if (_vm.SelectedTab != _vm.RadioTab && !m.Outgoing) _vm.RadioTab.Unread = true;
     }
+
+    // ---- connection ------------------------------------------------------------------------
 
     private async void OnConnectClick(object sender, RoutedEventArgs e)
     {
@@ -125,7 +151,7 @@ public partial class MainWindow : Window
         }
         catch (FsdLoginException ex)
         {
-            _vm.RadioTab.Add(new ChatMessage(MessageKind.Error, "SkyPilot", "Не удалось подключиться: " + ex.Message, DateTime.UtcNow));
+            Error("Не удалось подключиться: " + ex.Message);
         }
         finally
         {
@@ -133,13 +159,70 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void OnFlightPlanClick(object sender, RoutedEventArgs e)
+    // ---- flight plan (filed on the website) ------------------------------------------------
+
+    private WebsiteClient? Website() =>
+        WebsiteClient.TryParseSite(_settings.Website, out var site) ? new WebsiteClient(Http, site) : null;
+
+    private void OnFlightPlanClick(object sender, RoutedEventArgs e)
     {
-        var dialog = new FlightPlanWindow(_lastPlan, _settings.LastTypeCode, _session.IsConnected) { Owner = this };
-        if (dialog.ShowDialog() != true || dialog.Plan == null) return;
-        _lastPlan = dialog.Plan;
-        await Run(() => _session.SendFlightPlanAsync(dialog.Plan));
+        var site = Website();
+        if (site == null)
+        {
+            Error("Укажите адрес сайта SkyNetwork в настройках.");
+            return;
+        }
+        var callsign = _session.IsConnected ? _session.Callsign : _settings.LastCallsign;
+        Process.Start(new ProcessStartInfo(site.FlightPlanPage(callsign).ToString()) { UseShellExecute = true });
+        Info("План полёта подаётся на сайте. После подачи нажмите ОБНОВИТЬ.");
     }
+
+    private async void OnRefreshFlightPlanClick(object sender, RoutedEventArgs e) => await RefreshFlightPlanAsync(quiet: false);
+
+    /// <summary>
+    /// Load the member's latest plan from the website; when connected, send it to the FSD server
+    /// if it changed since the last time.
+    /// </summary>
+    private async Task RefreshFlightPlanAsync(bool quiet)
+    {
+        _nextPlanPoll = DateTime.UtcNow + FlightPlanPollInterval;
+        var site = Website();
+        if (site == null || _settings.Cid == 0)
+        {
+            if (!quiet) Error("Укажите CID и адрес сайта SkyNetwork в настройках.");
+            return;
+        }
+        FlightPlan? plan;
+        try
+        {
+            plan = await site.GetLatestFlightPlanAsync(_settings.Cid);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            if (!quiet) Error("Сайт SkyNetwork недоступен: " + ex.Message);
+            return;
+        }
+        _vm.FlightPlan = plan;
+        if (plan == null)
+        {
+            if (!quiet) Info("На сайте нет поданного плана полёта.");
+            return;
+        }
+        if (_session.IsConnected && plan != _sentPlan)
+        {
+            try
+            {
+                await _session.SendFlightPlanAsync(plan);
+                _sentPlan = plan;
+            }
+            catch (InvalidOperationException ex)
+            {
+                Error(ex.Message);
+            }
+        }
+    }
+
+    // ---- radios and transponder -------------------------------------------------------------
 
     private void OnModeCClick(object sender, RoutedEventArgs e) => _session.ModeC = _vm.ModeC;
 
@@ -149,19 +232,73 @@ public partial class MainWindow : Window
         _vm.Identing = true;
     }
 
-    private void OnSettingsClick(object sender, RoutedEventArgs e)
+    private void OnRxTxClick(object sender, RoutedEventArgs e)
     {
-        var dialog = new SettingsWindow(_settings, _protector) { Owner = this };
-        if (dialog.ShowDialog() != true) return;
-        _settings.Save(_settingsPath);
-        Topmost = _settings.KeepWindowOnTop;
+        _session.Com1Receive = _vm.Com1Rx;
+        _session.Com2Receive = _vm.Com2Rx;
+        _session.TransmitRadio = _vm.TxRadio;
+    }
+
+    private void OnComKeyDown(object sender, KeyEventArgs e)
+    {
+        if (sender is not TextBox box) return;
+        if (e.Key == Key.Escape)
+        {
+            box.GetBindingExpression(TextBox.TextProperty)?.UpdateTarget();
+            Keyboard.ClearFocus();
+            return;
+        }
+        if (e.Key != Key.Enter) return;
+        int radio = box.Tag as string == "2" ? 2 : 1;
+        if (!Frequency.TryParse(box.Text, out var khz))
+        {
+            Error("Неверная частота. Пример: 118.100");
+        }
+        else if (!_sim.IsConnected)
+        {
+            Error("Симулятор не подключён");
+        }
+        else
+        {
+            _sim.SetComFrequency(radio, khz);
+        }
+        box.GetBindingExpression(TextBox.TextProperty)?.UpdateTarget();
+        Keyboard.ClearFocus();
+    }
+
+    private void OnSquawkKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.Enter or Key.Escape)) return;
+        if (e.Key == Key.Enter)
+        {
+            if (!CommandProcessor.TryParseSquawk(SquawkBox.Text.Trim(), out var code)) Error("Код ответчика — 4 цифры от 0 до 7");
+            else if (!_sim.IsConnected) Error("Симулятор не подключён");
+            else _sim.SetTransponderCode(code);
+        }
+        SquawkBox.GetBindingExpression(TextBox.TextProperty)?.UpdateTarget();
+        Keyboard.ClearFocus();
     }
 
     private void OnControllerDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if (sender is ListView { SelectedItem: AtcRow row } && _sim.IsConnected)
-            _sim.SetComFrequency(1, row.FrequencyKhz);
+        if (sender is ListBox { SelectedItem: AtcRow row } && _sim.IsConnected)
+            _sim.SetComFrequency(_vm.TxRadio, row.FrequencyKhz);
     }
+
+    // ---- settings -----------------------------------------------------------------------------
+
+    private void OnSettingsClick(object sender, RoutedEventArgs e)
+    {
+        _settings.KeepWindowOnTop = _vm.Topmost;
+        var dialog = new SettingsWindow(_settings, _protector) { Owner = this };
+        if (dialog.ShowDialog() != true) return;
+        _settings.Save(_settingsPath);
+        _vm.Topmost = _settings.KeepWindowOnTop;
+    }
+
+    // ---- chat input ---------------------------------------------------------------------------
+
+    private async void OnSendClick(object sender, RoutedEventArgs e) => await SendInputAsync();
 
     private async void OnInputKeyDown(object sender, KeyEventArgs e)
     {
@@ -179,7 +316,11 @@ public partial class MainWindow : Window
             Input.CaretIndex = Input.Text.Length;
             return;
         }
-        if (e.Key != Key.Enter) return;
+        if (e.Key == Key.Enter) await SendInputAsync();
+    }
+
+    private async Task SendInputAsync()
+    {
         string line = Input.Text.Trim();
         if (line.Length == 0) return;
         Input.Clear();
@@ -195,8 +336,7 @@ public partial class MainWindow : Window
         await Run(async () =>
         {
             var feedback = await _commands.ExecuteAsync(line);
-            if (feedback != null)
-                _vm.RadioTab.Add(new ChatMessage(MessageKind.Info, "SkyPilot", feedback, DateTime.UtcNow));
+            if (feedback != null) Info(feedback);
         });
     }
 
@@ -208,7 +348,7 @@ public partial class MainWindow : Window
         }
         catch (InvalidOperationException ex)
         {
-            _vm.RadioTab.Add(new ChatMessage(MessageKind.Error, "SkyPilot", ex.Message, DateTime.UtcNow));
+            Error(ex.Message);
         }
     }
 

@@ -52,6 +52,13 @@ public sealed partial class NetworkSession : IAsyncDisposable
     public string Callsign => _info?.Callsign ?? "";
     public OwnAircraftData? OwnAircraft => _own;
     public bool ModeC { get; set; }
+
+    /// <summary>Receive text on COM1 / COM2 (the RX buttons).</summary>
+    public bool Com1Receive { get; set; } = true;
+    public bool Com2Receive { get; set; } = true;
+
+    /// <summary>Radio used for transmitting text: 1 or 2 (the TX buttons).</summary>
+    public int TransmitRadio { get; set; } = 1;
     public bool IsIdenting => _clock() < _identUntil;
 
     public TransponderMode TransponderMode =>
@@ -161,9 +168,10 @@ public sealed partial class NetworkSession : IAsyncDisposable
     {
         var fsd = RequireConnection();
         var own = _own ?? throw new InvalidOperationException("Нет данных от симулятора");
-        if (own.Com1Khz is < 118000 or > 136990) throw new InvalidOperationException("COM1 не настроен");
-        await fsd.SendAsync(Packets.TextMessage(Callsign, Frequency.ToFsdAddress(own.Com1Khz), text)).ConfigureAwait(false);
-        Raise(new ChatMessage(MessageKind.Radio, Callsign, text, _clock(), FrequencyKhz: own.Com1Khz, Outgoing: true));
+        int khz = TransmitRadio == 2 ? own.Com2Khz : own.Com1Khz;
+        if (khz is < 118000 or > 136990) throw new InvalidOperationException($"COM{TransmitRadio} не настроен");
+        await fsd.SendAsync(Packets.TextMessage(Callsign, Frequency.ToFsdAddress(khz), text)).ConfigureAwait(false);
+        Raise(new ChatMessage(MessageKind.Radio, Callsign, text, _clock(), FrequencyKhz: khz, Outgoing: true));
     }
 
     public async Task SendPrivateAsync(string to, string text)
@@ -246,7 +254,7 @@ public sealed partial class NetworkSession : IAsyncDisposable
         else if (to == "*")
             Raise(new ChatMessage(MessageKind.Broadcast, from, text, now));
         else if (Frequency.TryParseFsdAddress(to, out var khz) && _own is { } own &&
-                 (Frequency.SameChannel(khz, own.Com1Khz) || Frequency.SameChannel(khz, own.Com2Khz)))
+                 (Com1Receive && Frequency.SameChannel(khz, own.Com1Khz) || Com2Receive && Frequency.SameChannel(khz, own.Com2Khz)))
             Raise(new ChatMessage(MessageKind.Radio, from, text, now, FrequencyKhz: khz));
     }
 

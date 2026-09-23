@@ -29,6 +29,8 @@ public sealed class AppSettings
     public string ProtectedPassword { get; set; } = "";
     public string RealName { get; set; } = "";
     public string HomeAirport { get; set; } = "";
+    /// <summary>SkyNetwork website, where flight plans are filed.</summary>
+    public string Website { get; set; } = "http://127.0.0.1:8000/";
     public List<ServerEntry> Servers { get; set; } = [new ServerEntry()];
     public string SelectedServer { get; set; } = "SKYNET";
     public string LastCallsign { get; set; } = "";

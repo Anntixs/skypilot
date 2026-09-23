@@ -125,6 +125,26 @@ public class SessionTests
     }
 
     [Fact]
+    public async Task RxTx_SelectRadios()
+    {
+        await using var server = new FakeFsdServer();
+        var (_, session, messages) = Create();
+        await session.ConnectAsync(Info(server.Port));
+
+        session.Com1Receive = false;
+        await server.SendAsync("#TMUUEE_TWR:@18100:com1 muted");
+        await server.SendAsync("#TMUUEE_GND:@21500:on COM2");
+        await WaitFor(() => { lock (messages) return messages.Any(m => m.Kind == MessageKind.Radio) ? "" : null; });
+        await Task.Delay(100);
+        lock (messages) Assert.Equal(["on COM2"], messages.Where(m => m.Kind == MessageKind.Radio).Select(m => m.Text));
+
+        session.TransmitRadio = 2;
+        await session.SendRadioAsync("hello ground");
+        Assert.Equal("#TMAFL123:@21500:hello ground", server.Expect("#TM"));
+        await session.DisconnectAsync();
+    }
+
+    [Fact]
     public async Task AnswersQueries()
     {
         await using var server = new FakeFsdServer();

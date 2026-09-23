@@ -1,5 +1,6 @@
 using System.Windows;
 using SkyPilot.Core.Settings;
+using SkyPilot.Core.Web;
 
 namespace SkyPilot.App.Views;
 
@@ -18,6 +19,7 @@ public partial class SettingsWindow : Window
         NameBox.Text = settings.RealName;
         var server = settings.CurrentServer;
         ServerBox.Text = $"{server.Host}:{server.Port}";
+        WebsiteBox.Text = settings.Website;
         SoundBox.IsChecked = settings.PlaySoundOnPrivateMessage;
         TopmostBox.IsChecked = settings.KeepWindowOnTop;
     }
@@ -33,10 +35,17 @@ public partial class SettingsWindow : Window
         int port = 6809;
         if (parts[0].Length == 0 || parts.Length > 2 || parts.Length == 2 && !int.TryParse(parts[1], out port))
         {
-            ErrorText.Text = "Адрес сервера: хост или хост:порт";
+            ErrorText.Text = "Адрес сервера: хост или хост:порт, например 127.0.0.1:6809";
+            return;
+        }
+        string website = WebsiteBox.Text.Trim();
+        if (website.Length > 0 && !WebsiteClient.TryParseSite(website, out _))
+        {
+            ErrorText.Text = "Адрес сайта: например skynetwork.example или http://127.0.0.1:8000";
             return;
         }
         _settings.Cid = cid;
+        _settings.Website = website;
         _settings.ProtectedPassword = _protector.Protect(PasswordBox.Password);
         _settings.RealName = NameBox.Text.Trim();
         var server = _settings.CurrentServer;

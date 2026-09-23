@@ -16,7 +16,7 @@ public sealed class CommandProcessor(NetworkSession session, ISimulator sim)
         ".modec — переключить режим ответчика Standby/Mode C\n" +
         ".msg ПОЗЫВНОЙ текст — личное сообщение\n" +
         ".disconnect — отключиться от сети\n" +
-        "Текст без точки отправляется на частоту COM1.";
+        "Текст без точки отправляется на частоту радио с включённым TX.";
 
     /// <summary>Execute one line. Returns feedback for the user, or null.</summary>
     public async Task<string?> ExecuteAsync(string line)
