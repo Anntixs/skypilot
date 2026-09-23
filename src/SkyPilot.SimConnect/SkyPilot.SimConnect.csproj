@@ -7,13 +7,16 @@
     <RootNamespace>SkyPilot.SimConnect</RootNamespace>
   </PropertyGroup>
 
-  <!-- Locate the MSFS SDK: MSBuild property MsfsSdk, or the MSFS_SDK / MSFS2024_SDK environment variables. -->
+  <!--
+    Locate SimConnect: pass SimConnectManaged / SimConnectNative directly, or the SDK root via the
+    MsfsSdk property or the MSFS2024_SDK / MSFS_SDK environment variables.
+  -->
   <PropertyGroup>
     <MsfsSdk Condition="'$(MsfsSdk)' == ''">$(MSFS2024_SDK)</MsfsSdk>
     <MsfsSdk Condition="'$(MsfsSdk)' == ''">$(MSFS_SDK)</MsfsSdk>
-    <SimConnectManaged>$(MsfsSdk)\SimConnect SDK\lib\managed\Microsoft.FlightSimulator.SimConnect.dll</SimConnectManaged>
-    <SimConnectNative>$(MsfsSdk)\SimConnect SDK\lib\SimConnect.dll</SimConnectNative>
-    <HasMsfsSdk Condition="'$(MsfsSdk)' != '' And Exists('$(SimConnectManaged)')">true</HasMsfsSdk>
+    <SimConnectManaged Condition="'$(SimConnectManaged)' == ''">$(MsfsSdk)\SimConnect SDK\lib\managed\Microsoft.FlightSimulator.SimConnect.dll</SimConnectManaged>
+    <SimConnectNative Condition="'$(SimConnectNative)' == ''">$(MsfsSdk)\SimConnect SDK\lib\SimConnect.dll</SimConnectNative>
+    <HasMsfsSdk Condition="Exists('$(SimConnectManaged)') And Exists('$(SimConnectNative)')">true</HasMsfsSdk>
   </PropertyGroup>
 
   <ItemGroup>
@@ -30,6 +33,11 @@
   <ItemGroup Condition="'$(HasMsfsSdk)' != 'true'">
     <ProjectReference Include="..\..\tools\SimConnectStub\SimConnectStub.csproj" />
   </ItemGroup>
+
+  <!-- Release builds pass -p:RequireMsfsSdk=true so a build without SimConnect can never be shipped. -->
+  <Target Name="RequireMsfsSdk" BeforeTargets="Build" Condition="'$(HasMsfsSdk)' != 'true' And '$(RequireMsfsSdk)' == 'true'">
+    <Error Text="SkyPilot: SimConnect not found (SimConnectManaged='$(SimConnectManaged)')." />
+  </Target>
 
   <Target Name="WarnNoMsfsSdk" BeforeTargets="Build" Condition="'$(HasMsfsSdk)' != 'true'">
     <Message Importance="high" Text="SkyPilot: MSFS SDK not found (set MSFS_SDK) — building with the SimConnect stub, the simulator connection will not work." />
