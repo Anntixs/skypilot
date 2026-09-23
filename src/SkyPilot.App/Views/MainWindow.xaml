@@ -1,0 +1,99 @@
+<Window x:Class="SkyPilot.App.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="SkyPilot" Width="820" Height="520" MinWidth="620" MinHeight="380"
+        Style="{StaticResource SkyWindow}">
+  <DockPanel Margin="10">
+    <!-- Toolbar -->
+    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+      <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+        <Button x:Name="ConnectButton" Content="{Binding ConnectButtonText}" Click="OnConnectClick"/>
+        <Button Content="План полёта" Click="OnFlightPlanClick"/>
+        <ToggleButton Style="{StaticResource Toggle}" Content="Mode C" IsChecked="{Binding ModeC}" Click="OnModeCClick"
+                      ToolTip="Режим ответчика: Standby / Mode C"/>
+        <Button Content="IDENT" Click="OnIdentClick"/>
+        <Button Content="Настройки" Click="OnSettingsClick"/>
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+        <TextBlock Text="{Binding SimStatus}" Foreground="{StaticResource Muted}" Margin="0,0,12,0"/>
+        <TextBlock Text="{Binding NetStatus}" FontWeight="SemiBold"/>
+      </StackPanel>
+    </DockPanel>
+
+    <!-- Radios -->
+    <Border DockPanel.Dock="Top" Background="{StaticResource Panel}" BorderBrush="{StaticResource Border}"
+            BorderThickness="1" CornerRadius="4" Padding="10,6" Margin="0,0,0,8">
+      <StackPanel Orientation="Horizontal">
+        <TextBlock Text="COM1 " Foreground="{StaticResource Muted}"/>
+        <TextBlock Text="{Binding Com1}" FontFamily="Consolas" FontSize="16" Foreground="{StaticResource Accent}" Margin="0,0,24,0"/>
+        <TextBlock Text="COM2 " Foreground="{StaticResource Muted}"/>
+        <TextBlock Text="{Binding Com2}" FontFamily="Consolas" FontSize="16" Margin="0,0,24,0"/>
+        <TextBlock Text="XPDR " Foreground="{StaticResource Muted}"/>
+        <TextBlock Text="{Binding Squawk}" FontFamily="Consolas" FontSize="16" Margin="0,0,24,0"/>
+        <TextBlock Text="Трафик: " Foreground="{StaticResource Muted}"/>
+        <TextBlock Text="{Binding TrafficCount}"/>
+      </StackPanel>
+    </Border>
+
+    <!-- Command line -->
+    <TextBox x:Name="Input" DockPanel.Dock="Bottom" Margin="0,8,0,0" KeyDown="OnInputKeyDown" FontFamily="Consolas"
+             ToolTip="Текст уходит на COM1. Команды: .help"/>
+
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="200"/>
+      </Grid.ColumnDefinitions>
+
+      <TabControl ItemsSource="{Binding Tabs}" SelectedItem="{Binding SelectedTab}"
+                  Background="{StaticResource Panel}" BorderBrush="{StaticResource Border}">
+        <TabControl.ItemTemplate>
+          <DataTemplate>
+            <TextBlock Text="{Binding Title}" Foreground="Black">
+              <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding Unread}" Value="True">
+                      <Setter Property="FontWeight" Value="Bold"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </TextBlock.Style>
+            </TextBlock>
+          </DataTemplate>
+        </TabControl.ItemTemplate>
+        <TabControl.ContentTemplate>
+          <DataTemplate>
+            <ListBox ItemsSource="{Binding Lines}" Background="Transparent" BorderThickness="0"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled" Loaded="OnChatLoaded">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock TextWrapping="Wrap" Foreground="{Binding Color}" FontFamily="Consolas">
+                    <Run Text="{Binding Time, Mode=OneWay}" Foreground="#6B7580"/>
+                    <Run Text="{Binding From, Mode=OneWay}" FontWeight="Bold"/><Run Text=": "/>
+                    <Run Text="{Binding Text, Mode=OneWay}"/>
+                  </TextBlock>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </DataTemplate>
+        </TabControl.ContentTemplate>
+      </TabControl>
+
+      <DockPanel Grid.Column="1" Margin="8,0,0,0">
+        <TextBlock DockPanel.Dock="Top" Text="Диспетчеры рядом" Foreground="{StaticResource Muted}" Margin="0,0,0,4"/>
+        <ListView ItemsSource="{Binding Controllers}" Background="{StaticResource Panel}" BorderBrush="{StaticResource Border}"
+                  MouseDoubleClick="OnControllerDoubleClick" ToolTip="Двойной щелчок — настроить COM1">
+          <ListView.ItemTemplate>
+            <DataTemplate>
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{Binding Callsign}" Width="95" FontWeight="SemiBold"/>
+                <TextBlock Text="{Binding Frequency}" FontFamily="Consolas" Foreground="{StaticResource Accent}"/>
+              </StackPanel>
+            </DataTemplate>
+          </ListView.ItemTemplate>
+        </ListView>
+      </DockPanel>
+    </Grid>
+  </DockPanel>
+</Window>

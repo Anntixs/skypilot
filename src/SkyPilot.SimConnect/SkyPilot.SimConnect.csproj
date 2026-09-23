@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <RootNamespace>SkyPilot.SimConnect</RootNamespace>
+  </PropertyGroup>
+
+  <!-- Locate the MSFS SDK: MSBuild property MsfsSdk, or the MSFS_SDK / MSFS2024_SDK environment variables. -->
+  <PropertyGroup>
+    <MsfsSdk Condition="'$(MsfsSdk)' == ''">$(MSFS2024_SDK)</MsfsSdk>
+    <MsfsSdk Condition="'$(MsfsSdk)' == ''">$(MSFS_SDK)</MsfsSdk>
+    <SimConnectManaged>$(MsfsSdk)\SimConnect SDK\lib\managed\Microsoft.FlightSimulator.SimConnect.dll</SimConnectManaged>
+    <SimConnectNative>$(MsfsSdk)\SimConnect SDK\lib\SimConnect.dll</SimConnectNative>
+    <HasMsfsSdk Condition="'$(MsfsSdk)' != '' And Exists('$(SimConnectManaged)')">true</HasMsfsSdk>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SkyPilot.Core\SkyPilot.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(HasMsfsSdk)' == 'true'">
+    <Reference Include="Microsoft.FlightSimulator.SimConnect">
+      <HintPath>$(SimConnectManaged)</HintPath>
+    </Reference>
+    <None Include="$(SimConnectNative)" Link="SimConnect.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(HasMsfsSdk)' != 'true'">
+    <ProjectReference Include="..\..\tools\SimConnectStub\SimConnectStub.csproj" />
+  </ItemGroup>
+
+  <Target Name="WarnNoMsfsSdk" BeforeTargets="Build" Condition="'$(HasMsfsSdk)' != 'true'">
+    <Message Importance="high" Text="SkyPilot: MSFS SDK not found (set MSFS_SDK) — building with the SimConnect stub, the simulator connection will not work." />
+  </Target>
+</Project>

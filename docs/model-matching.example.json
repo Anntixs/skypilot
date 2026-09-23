@@ -1,0 +1,6 @@
+[
+  { "type": "A20N", "airline": "AFL", "title": "FlyByWire A320neo Aeroflot" },
+  { "type": "A20N", "title": "FlyByWire A320neo" },
+  { "type": "B738", "title": "PMDG 737-800 (House)" },
+  { "type": "SU95", "title": "Sukhoi Superjet 100" }
+]
