@@ -154,7 +154,7 @@ public class VoiceTests
         voice.Stop();
         server.Expect(9); // bye
         Assert.Equal(VoiceState.Disconnected, voice.State);
-        Assert.Empty(errors);
+        Assert.Empty(ConnectionErrors(errors));
     }
 
     [Fact]
@@ -171,14 +171,13 @@ public class VoiceTests
         voice.Start(new VoiceLogin("127.0.0.1", port, 1000001, "AFL123", "secret"));
 
         await WaitUntil(() => voice.Failing, 8000);
-        Assert.Single(errors);
-        Assert.StartsWith("Голос: нет связи с голосовым сервером", errors.Single());
+        Assert.StartsWith("Голос: нет связи с голосовым сервером", Assert.Single(ConnectionErrors(errors)));
 
         // The server comes up: the next retry connects.
         using var server = new FakeVoiceServer(port);
         await WaitUntil(() => voice.State == VoiceState.Connected, 10000);
         Assert.False(voice.Failing);
-        Assert.Single(errors);
+        Assert.Single(ConnectionErrors(errors));
         Assert.Contains(infos, i => i.StartsWith("Голос: подключено", StringComparison.Ordinal));
     }
 
@@ -189,6 +188,13 @@ public class VoiceTests
         Assert.Equal("не найден адрес voice.example", PilotVoice.Describe("Cannot resolve voice.example"));
         Assert.Equal("Invalid password", PilotVoice.Describe("Invalid password"));
     }
+
+    /// <summary>
+    /// Errors other than the audio device ones: a build machine has no sound card, so opening the
+    /// microphone and speakers fails there (and only there) after connecting.
+    /// </summary>
+    private static List<string> ConnectionErrors(IEnumerable<string> errors) =>
+        errors.Where(e => !e.Contains("ошибка аудиоустройства", StringComparison.Ordinal)).ToList();
 
     private static async Task WaitUntil(Func<bool> condition, int timeoutMs = 5000)
     {
