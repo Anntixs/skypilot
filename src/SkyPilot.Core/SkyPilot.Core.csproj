@@ -6,4 +6,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="SkyPilot.Core.Tests" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SkyNetwork.Voice\SkyNetwork.Voice.csproj" />
+  </ItemGroup>
 </Project>

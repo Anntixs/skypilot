@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using SkyNetwork.Voice;
 using SkyPilot.Core.Model;
 using SkyPilot.Core.Session;
 
@@ -27,6 +28,10 @@ public sealed class MainViewModel : Observable
     private string _utcTime = "";
     private ChatTab? _selectedTab;
     private List<AtcStation> _stations = [];
+    private VoiceState _voiceState;
+    private bool _voiceFailing;
+    private bool _transmitting;
+    private string _com1Heard = "", _com2Heard = "";
 
     public MainViewModel()
     {
@@ -122,6 +127,49 @@ public sealed class MainViewModel : Observable
     }
 
     public int TrafficCount { get => _trafficCount; set => Set(ref _trafficCount, value); }
+
+    // ---- voice ---------------------------------------------------------------------------
+
+    public VoiceState VoiceState
+    {
+        get => _voiceState;
+        set { if (Set(ref _voiceState, value)) OnVoiceChanged(); }
+    }
+
+    public bool VoiceFailing { get => _voiceFailing; set { if (Set(ref _voiceFailing, value)) OnVoiceChanged(); } }
+    public bool VoiceConnected => VoiceState == VoiceState.Connected;
+    public string VoiceText => VoiceState == VoiceState.Connecting ? "ГОЛОС…" : "ГОЛОС";
+
+    public string VoiceTip =>
+        VoiceConnected ? "Голосовая связь: подключено. Щёлкните, чтобы переподключиться"
+        : VoiceFailing ? "Голосовая связь: нет связи с голосовым сервером. Щёлкните, чтобы переподключиться"
+        : VoiceState == VoiceState.Connecting ? "Голосовая связь: подключение…"
+        : "Голосовая связь включается при подключении к сети";
+
+    private void OnVoiceChanged()
+    {
+        RaisePropertyChanged(nameof(VoiceConnected));
+        RaisePropertyChanged(nameof(VoiceText));
+        RaisePropertyChanged(nameof(VoiceTip));
+    }
+
+    public bool Transmitting
+    {
+        get => _transmitting;
+        set { if (Set(ref _transmitting, value)) RaisePropertyChanged(nameof(PttText)); }
+    }
+
+    public string PttText => Transmitting ? "ПЕРЕДАЧА" : "PTT";
+
+    /// <summary>"RX AFL123" while someone is heard on the radio, otherwise empty.</summary>
+    public string Com1Heard { get => _com1Heard; private set => Set(ref _com1Heard, value); }
+    public string Com2Heard { get => _com2Heard; private set => Set(ref _com2Heard, value); }
+
+    public void SetHeard(string com1, string com2)
+    {
+        Com1Heard = com1.Length > 0 ? "RX " + com1 : "";
+        Com2Heard = com2.Length > 0 ? "RX " + com2 : "";
+    }
 
     // ---- flight plan -------------------------------------------------------------------
 

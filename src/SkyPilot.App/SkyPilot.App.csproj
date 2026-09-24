@@ -14,6 +14,7 @@
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\SkyNetwork.Voice\SkyNetwork.Voice.csproj" />
     <ProjectReference Include="..\SkyPilot.Core\SkyPilot.Core.csproj" />
     <ProjectReference Include="..\SkyPilot.SimConnect\SkyPilot.SimConnect.csproj" />
   </ItemGroup>
