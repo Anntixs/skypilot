@@ -58,7 +58,8 @@ public partial class MainWindow : Window
         _sim.OwnAircraftUpdated += (_, own) => Ui(() => OnOwnAircraft(own));
         _session.ConnectionChanged += (_, connected) => Ui(() => OnNetworkConnectionChanged(connected));
         _session.MessageReceived += (_, m) => Ui(() => OnMessage(m));
-        _session.ControllersChanged += (_, _) => Ui(() => _vm.SetControllers(_session.Controllers));
+        _session.ControllersChanged += (_, _) => Ui(UpdateControllers);
+        _session.AtisReceived += (_, _) => Ui(UpdateControllers);
         _session.TrafficChanged += (_, _) => Ui(() => _vm.TrafficCount = _session.Traffic.Count);
 
         _voice.ApplySettings(_settings);
@@ -309,10 +310,44 @@ public partial class MainWindow : Window
         Keyboard.ClearFocus();
     }
 
-    private void OnControllerDoubleClick(object sender, MouseButtonEventArgs e)
+    private void UpdateControllers() => _vm.SetControllers(_session.Controllers, _session.Atis);
+
+    /// <summary>Double click: ATIS stations are requested, controllers are tuned on the TX radio.</summary>
+    private async void OnControllerDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if (sender is ListBox { SelectedItem: AtcRow row } && _sim.IsConnected)
-            _sim.SetComFrequency(_vm.TxRadio, row.FrequencyKhz);
+        if (sender is not ListBox { SelectedItem: AtcRow row }) return;
+        if (row.IsAtis) await RequestAtisAsync(row);
+        else TuneCom(_vm.TxRadio, row);
+    }
+
+    private async void OnRequestAtisClick(object sender, RoutedEventArgs e)
+    {
+        if (ControllerList.SelectedItem is AtcRow row) await RequestAtisAsync(row);
+    }
+
+    private void OnTuneCom1Click(object sender, RoutedEventArgs e)
+    {
+        if (ControllerList.SelectedItem is AtcRow row) TuneCom(1, row);
+    }
+
+    private void OnTuneCom2Click(object sender, RoutedEventArgs e)
+    {
+        if (ControllerList.SelectedItem is AtcRow row) TuneCom(2, row);
+    }
+
+    private async Task RequestAtisAsync(AtcRow row)
+    {
+        await Run(async () =>
+        {
+            await _session.RequestAtisAsync(row.Callsign);
+            Info($"Запрос ATIS: {row.Callsign}");
+        });
+    }
+
+    private void TuneCom(int radio, AtcRow row)
+    {
+        if (_sim.IsConnected) _sim.SetComFrequency(radio, row.FrequencyKhz);
+        else Error("Симулятор не подключён");
     }
 
     // ---- voice -----------------------------------------------------------------------------------

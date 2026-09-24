@@ -114,6 +114,9 @@ public static class Packets
         return $"$FP{callsign}:" + string.Join(':', fields);
     }
 
+    /// <summary>Ask an ATIS station (or a controller) for its ATIS / controller information.</summary>
+    public static string AtisRequest(string from, string station) => $"$CQ{from}:{station}:ATIS";
+
     /// <summary>Plane information request: ask another pilot what aircraft they fly.</summary>
     public static string PlaneInfoRequest(string from, string to) => $"#SB{from}:{to}:PIR";
 

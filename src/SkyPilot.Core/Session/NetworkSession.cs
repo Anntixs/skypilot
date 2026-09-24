@@ -18,6 +18,10 @@ public sealed partial class NetworkSession : IAsyncDisposable
     public static readonly TimeSpan StaleAfter = TimeSpan.FromSeconds(20);
     public static readonly TimeSpan ModelInfoWait = TimeSpan.FromSeconds(3);
     public static readonly TimeSpan IdentDuration = TimeSpan.FromSeconds(18);
+    /// <summary>ATIS text is complete when no line arrived for this long, even without the end marker.</summary>
+    public static readonly TimeSpan AtisLineWait = TimeSpan.FromSeconds(2);
+    /// <summary>Give up waiting for a station that did not answer an ATIS request at all.</summary>
+    public static readonly TimeSpan AtisReplyTimeout = TimeSpan.FromSeconds(6);
 
     private readonly ISimulator _sim;
     private readonly ModelMatcher _matcher;
@@ -25,6 +29,9 @@ public sealed partial class NetworkSession : IAsyncDisposable
     private readonly object _gate = new();
     private readonly Dictionary<string, RemoteAircraft> _traffic = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, AtcStation> _atc = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, AtisInfo> _atis = new(StringComparer.OrdinalIgnoreCase);
+    // ATIS replies being assembled, by station (guarded by _gate).
+    private readonly Dictionary<string, PendingAtis> _atisPending = new(StringComparer.OrdinalIgnoreCase);
 
     private FsdClient? _fsd;
     private ConnectInfo? _info;
@@ -48,6 +55,9 @@ public sealed partial class NetworkSession : IAsyncDisposable
     public event EventHandler? ControllersChanged;
     public event EventHandler? TrafficChanged;
 
+    /// <summary>A complete ATIS / controller information text arrived (also sent as a MessageKind.Atis message).</summary>
+    public event EventHandler<AtisInfo>? AtisReceived;
+
     public bool IsConnected => _fsd?.IsConnected == true;
     public string Callsign => _info?.Callsign ?? "";
     public OwnAircraftData? OwnAircraft => _own;
@@ -66,6 +76,9 @@ public sealed partial class NetworkSession : IAsyncDisposable
 
     public IReadOnlyList<AtcStation> Controllers =>
         _atc.Values.OrderBy(a => a.FrequencyKhz).ThenBy(a => a.Callsign).ToList();
+
+    /// <summary>The last ATIS / controller information received from each station.</summary>
+    public IReadOnlyDictionary<string, AtisInfo> Atis => _atis;
 
     public IReadOnlyList<RemoteAircraft> Traffic
     {
@@ -127,9 +140,11 @@ public sealed partial class NetworkSession : IAsyncDisposable
         lock (_gate)
         {
             _traffic.Clear();
+            _atisPending.Clear();
             if (_sim.IsConnected) _sim.RemoveAllAircraft();
         }
         _atc.Clear();
+        _atis.Clear();
         ControllersChanged?.Invoke(this, EventArgs.Empty);
         TrafficChanged?.Invoke(this, EventArgs.Empty);
         Info(reason);
@@ -192,6 +207,19 @@ public sealed partial class NetworkSession : IAsyncDisposable
         Info($"План полёта {plan.Departure} → {plan.Destination} отправлен");
     }
 
+    /// <summary>
+    /// Ask a station for its ATIS; a controller answers with its controller information.
+    /// The reply arrives as <see cref="AtisReceived"/> and a MessageKind.Atis message.
+    /// </summary>
+    public async Task RequestAtisAsync(string station)
+    {
+        var fsd = RequireConnection();
+        station = station.Trim().ToUpperInvariant();
+        if (!IsValidCallsign(station)) throw new InvalidOperationException("Неверный позывной станции");
+        lock (_gate) _atisPending[station] = new PendingAtis(_clock());
+        await fsd.SendAsync(Packets.AtisRequest(Callsign, station)).ConfigureAwait(false);
+    }
+
     public void Ident()
     {
         _identUntil = _clock() + IdentDuration;
@@ -222,6 +250,7 @@ public sealed partial class NetworkSession : IAsyncDisposable
                 RemoveTraffic(p[0]);
                 break;
             case "#DA":
+                _atis.TryRemove(p[0], out _);
                 if (_atc.TryRemove(p[0], out _)) ControllersChanged?.Invoke(this, EventArgs.Empty);
                 break;
             case "#TM":
@@ -235,6 +264,9 @@ public sealed partial class NetworkSession : IAsyncDisposable
                 break;
             case "$CQ":
                 OnClientQuery(p);
+                break;
+            case "$CR":
+                if (p[2] == "ATIS" && IsToMe(p[1])) OnAtisReply(p);
                 break;
             case "$ER":
                 Error($"Сервер: {p[4]} {p[3]}".Trim());
@@ -300,6 +332,48 @@ public sealed partial class NetworkSession : IAsyncDisposable
                     $"SkyPilot {typeof(NetworkSession).Assembly.GetName().Version} / {_sim.Name}"));
                 break;
         }
+    }
+
+    /// <summary>
+    /// $CR&lt;station&gt;:&lt;me&gt;:ATIS:T:&lt;line&gt; for each text line, then ...:ATIS:E:&lt;count&gt;.
+    /// Other kinds (V = voice URL, Z = zulu time, …) are ignored.
+    /// </summary>
+    private void OnAtisReply(FsdPacket p)
+    {
+        string station = p[0];
+        AtisInfo? done = null;
+        lock (_gate)
+        {
+            switch (p[3])
+            {
+                case "T":
+                    if (!_atisPending.TryGetValue(station, out var pending))
+                        _atisPending[station] = pending = new PendingAtis(_clock());
+                    pending.Lines.Add(string.Join(':', p.Fields.Skip(4)).Trim());
+                    pending.LastLine = _clock();
+                    break;
+                case "E":
+                    if (_atisPending.Remove(station, out var ended))
+                        done = Complete(station, ended);
+                    break;
+            }
+        }
+        if (done != null) PublishAtis(done);
+    }
+
+    private AtisInfo Complete(string station, PendingAtis pending)
+    {
+        var lines = pending.Lines.Where(l => l.Length > 0).ToList();
+        var atis = new AtisInfo(station.ToUpperInvariant(), lines, AtisInfo.ExtractLetter(lines), _clock());
+        _atis[atis.Station] = atis;
+        return atis;
+    }
+
+    private void PublishAtis(AtisInfo atis)
+    {
+        AtisReceived?.Invoke(this, atis);
+        Raise(new ChatMessage(MessageKind.Atis, atis.Station,
+            atis.Lines.Count > 0 ? atis.Text : "Станция не передала информацию", atis.ReceivedAt));
     }
 
     private void OnPilotPosition(PilotPosition pos)
@@ -380,12 +454,45 @@ public sealed partial class NetworkSession : IAsyncDisposable
                 }
             }
         }
+        CheckPendingAtis(now);
         foreach (var a in _atc.Values)
         {
             if (now - a.LastSeen > TimeSpan.FromSeconds(60) && _atc.TryRemove(a.Callsign, out _))
                 ControllersChanged?.Invoke(this, EventArgs.Empty);
         }
         if (changed) TrafficChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Finish ATIS replies that never got an end marker, and give up on stations that never answered.</summary>
+    private void CheckPendingAtis(DateTime now)
+    {
+        List<AtisInfo>? done = null;
+        List<string>? unanswered = null;
+        lock (_gate)
+        {
+            foreach (var (station, pending) in _atisPending.ToList())
+            {
+                if (pending.Lines.Count > 0 && now - pending.LastLine >= AtisLineWait)
+                {
+                    _atisPending.Remove(station);
+                    (done ??= []).Add(Complete(station, pending));
+                }
+                else if (pending.Lines.Count == 0 && now - pending.RequestedAt >= AtisReplyTimeout)
+                {
+                    _atisPending.Remove(station);
+                    (unanswered ??= []).Add(station);
+                }
+            }
+        }
+        foreach (var atis in done ?? []) PublishAtis(atis);
+        foreach (var station in unanswered ?? []) Info($"{station}: нет ответа на запрос ATIS");
+    }
+
+    private sealed class PendingAtis(DateTime requestedAt)
+    {
+        public DateTime RequestedAt { get; } = requestedAt;
+        public DateTime LastLine { get; set; } = requestedAt;
+        public List<string> Lines { get; } = [];
     }
 
     // ---- helpers ------------------------------------------------------------------------
