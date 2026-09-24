@@ -2,7 +2,8 @@ name: Release
 
 # Builds a ready-to-run SkyPilot for Windows x64 (self-contained, no .NET install needed).
 #  - Every push to main, pull request and manual run: the package is attached to the run as an artifact.
-#  - Tags v*: the zip is also published as a GitHub Release.
+#  - Every run also builds the installer SkyPilot-Setup-<version>.exe (Inno Setup, installer/SkyPilot.iss).
+#  - Tags v*: the installer and the zip are published as a GitHub Release.
 on:
   workflow_dispatch:
   push:
@@ -46,38 +47,42 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path publish/SkyPilot/SkyPilot.exe)) { throw "SkyPilot.exe missing" }
 
-      # SimConnect.dll is part of the MSFS SDK and has no public download. SkyPilot finds it at run
-      # time next to SkyPilot.exe or in the installed SDK. If the maintainers attached it to a DRAFT
-      # release named "msfs-sdk", it is bundled so users don't need the SDK.
-      - name: Bundle SimConnect.dll (optional)
+      # SimConnect.dll from the MSFS SDK (redistributed with SkyPilot, see third_party/SimConnect).
+      - name: Bundle SimConnect.dll
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; 'X-GitHub-Api-Version' = '2022-11-28' }
-          $release = Invoke-RestMethod "https://api.github.com/repos/${{ github.repository }}/releases?per_page=100" -Headers $headers |
-            Where-Object { $_.name -eq 'msfs-sdk' -or $_.tag_name -eq 'msfs-sdk' } | Select-Object -First 1
-          $asset = $release.assets | Where-Object { $_.name -eq 'SimConnect.dll' } | Select-Object -First 1
-          if ($asset) {
-            Invoke-WebRequest $asset.url -Headers ($headers + @{ Accept = 'application/octet-stream' }) `
-              -OutFile publish/SkyPilot/SimConnect.dll -UseBasicParsing
-            Write-Host "SimConnect.dll bundled"
-          } else {
-            Write-Host "::notice::SimConnect.dll not bundled (no msfs-sdk draft release). SkyPilot will look for it next to SkyPilot.exe or in the MSFS SDK."
-          }
+        run: Copy-Item third_party/SimConnect/SimConnect.dll publish/SkyPilot/
 
       - name: Zip
         shell: pwsh
         run: Compress-Archive -Path publish/SkyPilot -DestinationPath "${{ steps.version.outputs.name }}.zip"
+
+      - name: Installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          & $iscc /Qp "/DAppVersion=${{ steps.version.outputs.version }}" "/DSourceDir=$PWD\publish\SkyPilot" "/DOutputDir=$PWD\dist" installer\SkyPilot.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path "dist\SkyPilot-Setup-${{ steps.version.outputs.version }}.exe")) { throw "installer missing" }
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.version.outputs.name }}
           path: publish/SkyPilot
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SkyPilot-Setup-${{ steps.version.outputs.version }}
+          path: dist/SkyPilot-Setup-${{ steps.version.outputs.version }}.exe
+
       - name: GitHub Release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.version.outputs.name }}.zip
+          files: |
+            dist/SkyPilot-Setup-${{ steps.version.outputs.version }}.exe
+            ${{ steps.version.outputs.name }}.zip
           generate_release_notes: true
