@@ -225,8 +225,9 @@ public sealed class VoiceClient : IDisposable
             _mic.DataAvailable += (_, e) => _transmitter?.AddPcm16(e.Buffer.AsSpan(0, e.BytesRecorded));
             _mic.StartRecording();
         }
-        catch (Exception ex) when (ex is NAudio.MmException or InvalidOperationException)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
+            // Any device failure (unplugged, busy, unsupported format) leaves voice without audio, never crashes the client.
             StopAudio();
             SetState(State, "Audio device error: " + ex.Message);
         }
@@ -234,7 +235,7 @@ public sealed class VoiceClient : IDisposable
 
     private void StopAudio()
     {
-        try { _mic?.StopRecording(); } catch (NAudio.MmException) { }
+        try { _mic?.StopRecording(); } catch (Exception ex) when (ex is NAudio.MmException or InvalidOperationException) { }
         _mic?.Dispose();
         _mic = null;
         try { _speakers?.Stop(); } catch (NAudio.MmException) { }
