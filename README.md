@@ -84,7 +84,20 @@ dotnet run --project src/SkyPilot.App -c Release
 
 ## Подбор моделей
 
-Другие пилоты показываются моделями из вашего симулятора. По умолчанию используются стандартные самолёты MSFS. Если нужной модели нет, подставляется Airbus A320neo. Свои правила задаются в `%APPDATA%\SkyPilot\model-matching.json`: пример в [`docs/model-matching.example.json`](docs/model-matching.example.json). Название модели (`title`) — это значение `title=` из `aircraft.cfg` пакета.
+Другие пилоты показываются моделями из вашего симулятора. **По умолчанию используются модели трафика FSLTL** (FS Live Traffic Liveries, бесплатно: https://fslivetrafficliveries.com). SkyPilot при запуске сам находит папку Community (MSFS 2020 и 2024, версии Microsoft Store и Steam) и читает установленный пакет `fsltl-traffic-base`. Если папка Community лежит в нестандартном месте, укажите её в поле `CommunityFolder` файла `%APPDATA%\SkyPilot\settings.json`.
+
+Модель подбирается в таком порядке:
+
+1. ваши правила из `%APPDATA%\SkyPilot\model-matching.json`;
+2. нужный тип в ливрее той же авиакомпании;
+3. близкий тип в ливрее той же авиакомпании (например, A320 вместо A20N, 737-800 вместо 737 MAX 8);
+4. нужный или близкий тип в нейтральной ливрее FSLTL (`ZZZZ`);
+5. стандартный самолёт MSFS (для типов, которых нет в FSLTL);
+6. запасная модель: A320 из FSLTL, а если FSLTL нет, стандартный Airbus A320neo.
+
+В правила берутся только ливреи, которые реально установлены, поэтому в симулятор не уходят несуществующие модели. Если модель всё же не загрузилась, SkyPilot сам ставит запасную. При запуске в окне сообщений видно, сколько ливрей FSLTL найдено.
+
+Пример своих правил: [`docs/model-matching.example.json`](docs/model-matching.example.json). Название модели (`title`) — это значение `title=` из `aircraft.cfg` пакета.
 
 ## Тесты
 
