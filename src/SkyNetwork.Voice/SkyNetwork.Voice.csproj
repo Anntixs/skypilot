@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    SkyNetwork radio voice client: protocol, Opus, radio effects, mixing, push-to-talk and
+    Windows audio devices. Shared by SkyPilot and Network-ATC (each keeps a copy of this folder).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>SkyNetwork.Voice</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Pure C# Opus: no native library to ship. -->
+    <PackageReference Include="Concentus" Version="2.2.2" />
+    <PackageReference Include="NAudio.Core" Version="2.2.1" />
+    <PackageReference Include="NAudio.WinMM" Version="2.2.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SkyNetwork.Voice.Tests" />
+  </ItemGroup>
+</Project>

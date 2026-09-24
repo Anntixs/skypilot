@@ -38,6 +38,17 @@ public sealed class AppSettings
     public bool PlaySoundOnPrivateMessage { get; set; } = true;
     public bool KeepWindowOnTop { get; set; }
 
+    /// <summary>UDP port of the voice server; it runs on the same host as the FSD server.</summary>
+    public int VoicePort { get; set; } = 3782;
+    /// <summary>Microphone and speakers by device name; empty = Windows default.</summary>
+    public string InputDevice { get; set; } = "";
+    public string OutputDevice { get; set; } = "";
+    /// <summary>Microphone gain and receive volume (1 = 100 %).</summary>
+    public double MicGain { get; set; } = 1;
+    public double OutputVolume { get; set; } = 1;
+    /// <summary>Push-to-talk key or joystick button, e.g. "key:162" or "joy:0:4"; empty = none.</summary>
+    public string PttKey { get; set; } = "";
+
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
     public static string DefaultDirectory =>
