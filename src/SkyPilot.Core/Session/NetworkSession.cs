@@ -343,7 +343,8 @@ public sealed partial class NetworkSession : IAsyncDisposable
                 Error($"Не удалось показать {e.Callsign}: модель «{e.ModelTitle}» не найдена");
                 return;
             }
-            t.ModelTitle = ModelMatcher.FallbackTitle;
+            // Matched model missing: try the network fallback, then the stock A320neo.
+            t.ModelTitle = e.ModelTitle == _matcher.Fallback ? ModelMatcher.FallbackTitle : _matcher.Fallback;
             _sim.AddAircraft(t.Callsign, t.ModelTitle, t.Render(_clock()));
         }
     }

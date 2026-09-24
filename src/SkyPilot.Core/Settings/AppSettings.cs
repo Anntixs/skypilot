@@ -49,6 +49,9 @@ public sealed class AppSettings
     /// <summary>Push-to-talk key or joystick button, e.g. "key:162" or "joy:0:4"; empty = none.</summary>
     public string PttKey { get; set; } = "";
 
+    /// <summary>MSFS Community folder with FSLTL. Empty: found automatically from UserCfg.opt.</summary>
+    public string CommunityFolder { get; set; } = "";
+
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
     public static string DefaultDirectory =>

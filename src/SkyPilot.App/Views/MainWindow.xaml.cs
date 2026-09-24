@@ -49,7 +49,8 @@ public partial class MainWindow : Window
         _settings = AppSettings.Load(_settingsPath);
         _vm.Topmost = _settings.KeepWindowOnTop;
 
-        var matcher = ModelMatcher.Load(Path.Combine(AppSettings.DefaultDirectory, "model-matching.json"));
+        var fsltl = FsltlLibrary.Load(CommunityFolders.Find(_settings.CommunityFolder));
+        var matcher = ModelMatcher.Load(Path.Combine(AppSettings.DefaultDirectory, "model-matching.json"), fsltl);
         _session = new NetworkSession(_sim, matcher);
         _commands = new CommandProcessor(_session, _sim);
 
@@ -83,6 +84,9 @@ public partial class MainWindow : Window
 
         _vm.RadioTab.Add(new ChatMessage(MessageKind.Info, "SkyPilot",
             "Добро пожаловать в SkyPilot! Запустите MSFS, затем нажмите OFFLINE, чтобы подключиться. Команды: .help", DateTime.UtcNow));
+        Info(fsltl.IsInstalled
+            ? $"Модели трафика FSLTL: найдено {fsltl.Titles.Count} ливрей ({fsltl.PackagePath})."
+            : "Пакет FSLTL не найден: другие самолёты будут показаны стандартными моделями MSFS. Установите FS Live Traffic Liveries (fsltl-traffic-base) для правильных моделей и ливрей.");
         Closing += (_, _) =>
         {
             _settings.KeepWindowOnTop = _vm.Topmost;
