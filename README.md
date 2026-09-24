@@ -51,18 +51,17 @@ SkyPilot связывает симулятор с FSD-сервером сети 
 
 ## Скачать
 
-Готовая сборка для Windows x64 лежит в [Actions → Release](../../actions/workflows/release.yml): откройте последний успешный запуск, архив в разделе *Artifacts*. Релизы с тегами `v*` публикуются в *Releases*. .NET устанавливать не нужно, он уже внутри.
+**Установщик:** `SkyPilot-Setup-<версия>.exe` в [Releases](../../releases). Запустите его, выберите установку для всех пользователей или только для себя. Ярлык появится в меню «Пуск» (по желанию и на рабочем столе). .NET устанавливать не нужно, он уже внутри, `SimConnect.dll` тоже. Удаление — через «Установка и удаление программ»; настройки в `%APPDATA%\SkyPilot` при этом сохраняются.
+
+Там же лежит zip-архив, который не требует установки.
+
+### Как выпустить релиз
+
+Поставьте тег `v<версия>` на `main`, например `v1.0.0` (на GitHub: *Releases → Draft a new release → Choose a tag → v1.0.0 → Publish*). Workflow [Release](../../actions/workflows/release.yml) соберёт установщик и zip и приложит их к релизу. Установщик каждой сборки также лежит в *Artifacts* запуска.
 
 ### SimConnect.dll
 
-Для связи с MSFS нужен `SimConnect.dll` из MSFS SDK. Microsoft не выкладывает его для свободного скачивания, поэтому в репозитории его нет. SkyPilot ищет файл при запуске в таком порядке:
-
-1. рядом с `SkyPilot.exe`;
-2. в установленном MSFS SDK (переменные окружения `MSFS2024_SDK` / `MSFS_SDK`).
-
-Если файл не найден, в строке состояния будет «MSFS: нет SimConnect.dll». Как его получить: включите в MSFS режим разработчика (*Options → General → Developers → Developer Mode*), установите SDK (*Help → SDK Installers*) и скопируйте `SimConnect SDK\lib\SimConnect.dll` рядом с `SkyPilot.exe`.
-
-Чтобы `SimConnect.dll` сразу входил в сборки на GitHub, приложите его к **черновику** релиза с названием `msfs-sdk`. Черновики видят только владельцы репозитория, и workflow положит файл в архив.
+Для связи с MSFS нужен `SimConnect.dll` из MSFS SDK. Он лежит в `third_party/SimConnect` и входит в установщик и архив. SkyPilot ищет файл рядом с `SkyPilot.exe`, а если его там нет — в установленном MSFS SDK (переменные окружения `MSFS2024_SDK` / `MSFS_SDK`).
 
 ## Сборка из исходников
 
