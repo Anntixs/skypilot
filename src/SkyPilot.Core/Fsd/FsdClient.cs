@@ -130,7 +130,8 @@ public sealed class FsdClient : IAsyncDisposable
     {
         if (logoffPacket != null) await SendAsync(logoffPacket).ConfigureAwait(false);
         _cts?.Cancel();
-        try { _tcp?.Client.Shutdown(SocketShutdown.Both); } catch (Exception e) when (e is SocketException or ObjectDisposedException) { }
+        // The read loop may close the connection at the same moment (server gone): Client is then null.
+        try { _tcp?.Client?.Shutdown(SocketShutdown.Both); } catch (Exception e) when (e is SocketException or ObjectDisposedException) { }
         if (_readLoop != null)
         {
             try { await _readLoop.ConfigureAwait(false); } catch { /* already reported */ }

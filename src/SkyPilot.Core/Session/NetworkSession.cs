@@ -276,6 +276,16 @@ public sealed partial class NetworkSession : IAsyncDisposable
 
     private bool IsToMe(string to) => to.Equals(Callsign, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>".wallop": a request for help to every supervisor online ("*S").</summary>
+    public async Task SendSupervisorRequestAsync(string text)
+    {
+        var fsd = RequireConnection();
+        text = text.Trim();
+        if (text.Length == 0) throw new InvalidOperationException("Напишите, что случилось");
+        await fsd.SendAsync(Packets.TextMessage(Callsign, "*S", text)).ConfigureAwait(false);
+        Raise(new ChatMessage(MessageKind.Broadcast, Callsign, "[супервайзеру] " + text, _clock(), Outgoing: true));
+    }
+
     private void OnTextMessage(string from, string to, string text)
     {
         var now = _clock();
@@ -285,6 +295,8 @@ public sealed partial class NetworkSession : IAsyncDisposable
             Raise(new ChatMessage(MessageKind.Private, from, text, now, Peer: from.ToUpperInvariant()));
         else if (to == "*")
             Raise(new ChatMessage(MessageKind.Broadcast, from, text, now));
+        else if (to == "*S")
+            Raise(new ChatMessage(MessageKind.Broadcast, from, "[WALLOP] " + text, now));
         else if (Frequency.TryParseFsdAddress(to, out var khz) && _own is { } own &&
                  (Com1Receive && Frequency.SameChannel(khz, own.Com1Khz) || Com2Receive && Frequency.SameChannel(khz, own.Com2Khz)))
             Raise(new ChatMessage(MessageKind.Radio, from, text, now, FrequencyKhz: khz));
