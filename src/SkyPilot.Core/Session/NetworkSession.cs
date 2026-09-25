@@ -24,7 +24,7 @@ public sealed partial class NetworkSession : IAsyncDisposable
     public static readonly TimeSpan AtisReplyTimeout = TimeSpan.FromSeconds(6);
 
     private readonly ISimulator _sim;
-    private readonly ModelMatcher _matcher;
+    private ModelMatcher _matcher;
     private readonly Func<DateTime> _clock;
     private readonly object _gate = new();
     private readonly Dictionary<string, RemoteAircraft> _traffic = new(StringComparer.OrdinalIgnoreCase);
@@ -48,6 +48,16 @@ public sealed partial class NetworkSession : IAsyncDisposable
         _sim.OwnAircraftUpdated += (_, data) => _own = data;
         _sim.AircraftCreateFailed += OnAircraftCreateFailed;
         _sim.ConnectionChanged += OnSimConnectionChanged;
+    }
+
+    /// <summary>Picks model titles; the window replaces it when another simulator (with other models) connects.</summary>
+    public ModelMatcher Matcher
+    {
+        get => _matcher;
+        set
+        {
+            lock (_gate) _matcher = value;
+        }
     }
 
     public event EventHandler<ChatMessage>? MessageReceived;
@@ -318,7 +328,7 @@ public sealed partial class NetworkSession : IAsyncDisposable
                 t.Equipment = info.Equipment;
                 t.Airline = info.Airline.Length > 0 ? info.Airline : Packets.AirlineFromCallsign(t.Callsign);
                 // The aircraft was already drawn with a guessed model: redraw with the right one.
-                if (changed && t.InSimulator && _matcher.Match(t.Equipment, t.Airline) != t.ModelTitle)
+                if (changed && t.InSimulator && (_sim.MatchesModels || _matcher.Match(t.Equipment, t.Airline) != t.ModelTitle))
                 {
                     _sim.RemoveAircraft(t.Callsign);
                     t.InSimulator = false;
@@ -431,11 +441,14 @@ public sealed partial class NetworkSession : IAsyncDisposable
             }
             // Matched model missing: try the network fallback, then the stock A320neo.
             t.ModelTitle = e.ModelTitle == _matcher.Fallback ? ModelMatcher.FallbackTitle : _matcher.Fallback;
-            _sim.AddAircraft(t.Callsign, t.ModelTitle, t.Render(_clock()));
+            _sim.AddAircraft(t.Callsign, ModelOf(t), t.Render(_clock()));
         }
     }
 
     // ---- traffic rendering -----------------------------------------------------------
+
+    private static AircraftModel ModelOf(RemoteAircraft t) =>
+        new(t.ModelTitle ?? "", ModelMatcher.NormalizeType(t.Equipment), t.Airline);
 
     internal void RenderTick()
     {
@@ -456,8 +469,8 @@ public sealed partial class NetworkSession : IAsyncDisposable
                 if (!t.InSimulator)
                 {
                     if (t.Equipment.Length == 0 && now - t.FirstSeen < ModelInfoWait) continue;
-                    t.ModelTitle = _matcher.Match(t.Equipment, t.Airline);
-                    _sim.AddAircraft(t.Callsign, t.ModelTitle, t.Render(now));
+                    t.ModelTitle = _sim.MatchesModels ? "" : _matcher.Match(t.Equipment, t.Airline);
+                    _sim.AddAircraft(t.Callsign, ModelOf(t), t.Render(now));
                     t.InSimulator = true;
                 }
                 else

@@ -97,6 +97,23 @@ public class SessionTests
     }
 
     [Fact]
+    public async Task Traffic_ForASimulatorThatPicksModels_GetsTypeAndAirline()
+    {
+        await using var server = new FakeFsdServer();
+        var (sim, session, _) = Create();
+        sim.MatchesModels = true;   // X-Plane: the plugin chooses the CSL model
+        await session.ConnectAsync(Info(server.Port));
+
+        var state = new AircraftState(55.98, 37.40, 5000, 0, 0, 90, 250, false);
+        await server.SendAsync(Packets.Position("SBI456", TransponderMode.ModeC, 1234, state, 5000));
+        server.Expect("#SB");
+        await server.SendAsync(Packets.PlaneInfoResponse("SBI456", "AFL123", "H/B748/L", "SBI"));
+        var model = await WaitFor(() => sim.Models.TryGetValue("SBI456", out var m) ? m : null);
+        Assert.Equal(new SkyPilot.Core.Simulation.AircraftModel("", "B748", "SBI"), model);
+        await session.DisconnectAsync();
+    }
+
+    [Fact]
     public async Task Messages_AreFilteredByFrequency()
     {
         await using var server = new FakeFsdServer();

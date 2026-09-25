@@ -3,7 +3,8 @@ name: Release
 # Builds a ready-to-run SkyPilot for Windows x64 (self-contained, no .NET install needed).
 #  - Every push to main, pull request and manual run: the package is attached to the run as an artifact.
 #  - Every run also builds the installer SkyPilot-Setup-<version>.exe (Inno Setup, installer/SkyPilot.iss).
-#  - Tags v*: the installer and the zip are published as a GitHub Release.
+#  - Every run also builds the X-Plane plugin (xplane-plugin/), bundled as XPlanePlugin/SkyPilot/ in the package.
+#  - Tags v*: the installer, the zip and the X-Plane plugin zip are published as a GitHub Release.
 on:
   workflow_dispatch:
   push:
@@ -52,6 +53,20 @@ jobs:
         shell: pwsh
         run: Copy-Item third_party/SimConnect/SimConnect.dll publish/SkyPilot/
 
+      # X-Plane plugin (xplane-plugin/, C++/CMake). Shipped inside the app folder as
+      # XPlanePlugin/SkyPilot/ (copy that folder to X-Plane/Resources/plugins/) and as its own zip.
+      - name: Build X-Plane plugin
+        shell: pwsh
+        run: |
+          cmake -S xplane-plugin -B build/xp -A x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build/xp --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --install build/xp --config Release --prefix publish/SkyPilot/XPlanePlugin
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path publish/SkyPilot/XPlanePlugin/SkyPilot/win_x64/SkyPilot.xpl)) { throw "SkyPilot.xpl missing" }
+          Compress-Archive -Path publish/SkyPilot/XPlanePlugin/SkyPilot -DestinationPath "SkyPilot-XPlanePlugin-${{ steps.version.outputs.version }}.zip"
+
       - name: Zip
         shell: pwsh
         run: Compress-Archive -Path publish/SkyPilot -DestinationPath "${{ steps.version.outputs.name }}.zip"
@@ -78,6 +93,11 @@ jobs:
           name: SkyPilot-Setup-${{ steps.version.outputs.version }}
           path: dist/SkyPilot-Setup-${{ steps.version.outputs.version }}.exe
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SkyPilot-XPlanePlugin-${{ steps.version.outputs.version }}
+          path: publish/SkyPilot/XPlanePlugin
+
       - name: GitHub Release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
@@ -85,4 +105,5 @@ jobs:
           files: |
             dist/SkyPilot-Setup-${{ steps.version.outputs.version }}.exe
             ${{ steps.version.outputs.name }}.zip
+            SkyPilot-XPlanePlugin-${{ steps.version.outputs.version }}.zip
           generate_release_notes: true

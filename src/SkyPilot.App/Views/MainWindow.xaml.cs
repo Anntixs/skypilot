@@ -14,6 +14,7 @@ using SkyPilot.Core.Matching;
 using SkyPilot.Core.Model;
 using SkyPilot.Core.Session;
 using SkyPilot.Core.Settings;
+using SkyPilot.Core.Simulation;
 using SkyPilot.Core.Voice;
 using SkyPilot.Core.Web;
 using SkyPilot.SimConnect;
@@ -29,7 +30,11 @@ public partial class MainWindow : Window
     private readonly DpapiProtector _protector = new();
     private readonly AppSettings _settings;
     private readonly MainViewModel _vm = new();
-    private readonly MsfsSimulator _sim = new();
+    private readonly XPlaneSimulator _xplane = new();
+    private readonly SimulatorHub _sim;
+    private readonly ModelMatcher _msfsMatcher;
+    private ModelMatcher? _p3dMatcher;
+    private bool _fsltlReported;
     private readonly NetworkSession _session;
     private readonly CommandProcessor _commands;
     private readonly PilotVoice _voice = new();
@@ -49,12 +54,20 @@ public partial class MainWindow : Window
         _settings = AppSettings.Load(_settingsPath);
         _vm.Topmost = _settings.KeepWindowOnTop;
 
+        _sim = new SimulatorHub(
+        [
+            (SimulatorKind.XPlane, _xplane),
+            (SimulatorKind.Msfs, new SimConnectSimulator(SimConnectFlavor.Msfs)),
+            (SimulatorKind.Prepar3D, new SimConnectSimulator(SimConnectFlavor.Prepar3D(() => _settings.P3dSimConnectPath))),
+        ])
+        { Preferred = _settings.Simulator };
         var fsltl = FsltlLibrary.Load(CommunityFolders.Find(_settings.CommunityFolder));
-        var matcher = ModelMatcher.Load(Path.Combine(AppSettings.DefaultDirectory, "model-matching.json"), fsltl);
-        _session = new NetworkSession(_sim, matcher);
+        _msfsMatcher = ModelMatcher.Load(MatchingFile, fsltl);
+        _session = new NetworkSession(_sim, _msfsMatcher);
         _commands = new CommandProcessor(_session, _sim);
 
-        _sim.ConnectionChanged += (_, connected) => Ui(() => _vm.SimConnected = connected);
+        _sim.ConnectionChanged += (_, connected) => Ui(() => OnSimConnectionChanged(connected));
+        _xplane.PluginLog += (_, text) => Ui(() => Info("X-Plane plugin: " + text));
         _sim.OwnAircraftUpdated += (_, own) => Ui(() => OnOwnAircraft(own));
         _session.ConnectionChanged += (_, connected) => Ui(() => OnNetworkConnectionChanged(connected));
         _session.MessageReceived += (_, m) => Ui(() => OnMessage(m));
@@ -84,10 +97,7 @@ public partial class MainWindow : Window
         _clock.Start();
 
         _vm.RadioTab.Add(new ChatMessage(MessageKind.Info, "SkyPilot",
-            "Welcome to SkyPilot! Start MSFS, then click OFFLINE to connect. Commands: .help", DateTime.UtcNow));
-        Info(fsltl.IsInstalled
-            ? $"FSLTL traffic models: {fsltl.Titles.Count} liveries found ({fsltl.PackagePath})."
-            : "FSLTL package not found: other aircraft will be shown with default MSFS models. Install FS Live Traffic Liveries (fsltl-traffic-base) for correct models and liveries.");
+            "Welcome to SkyPilot! Start your simulator (MSFS, Prepar3D or X-Plane), then click OFFLINE to connect. Commands: .help", DateTime.UtcNow));
         Closing += (_, _) =>
         {
             _settings.KeepWindowOnTop = _vm.Topmost;
@@ -104,12 +114,52 @@ public partial class MainWindow : Window
     private void Info(string text) => _vm.RadioTab.Add(new ChatMessage(MessageKind.Info, "SkyPilot", text, DateTime.UtcNow));
     private void Error(string text) => _vm.RadioTab.Add(new ChatMessage(MessageKind.Error, "SkyPilot", text, DateTime.UtcNow));
 
+    private static string MatchingFile => Path.Combine(AppSettings.DefaultDirectory, "model-matching.json");
+
     private void TryConnectSim()
     {
-        if (_sim.IsConnected) return;
+        if (_sim.Active != null) return;
         _sim.Connect();
-        if (_sim.LastError != null && _vm.SimError == null) Error(_sim.LastError);
+        // In automatic mode a missing MSFS library is no problem for someone flying Prepar3D: only the chosen simulator reports.
+        if (_sim.Preferred != SimulatorKind.Auto && _sim.LastError != null && _vm.SimError == null) Error(_sim.LastError);
         _vm.SimError = _sim.LastError;
+    }
+
+    private async void OnSimConnectionChanged(bool connected)
+    {
+        _vm.SimConnected = connected;
+        _vm.SimName = _sim.Name;
+        if (!connected) return;
+        Info($"Connected to {_sim.Name}.");
+        switch (_sim.ActiveKind)
+        {
+            case SimulatorKind.Prepar3D:
+                // The installed aircraft are read once: their titles are the models Prepar3D can show.
+                if (_p3dMatcher == null)
+                {
+                    var library = await Task.Run(() => SimObjectsLibrary.Load(SimObjectsLibrary.Prepar3DFolders(SimConnectFlavor.Prepar3DFolders())));
+                    _p3dMatcher = ModelMatcher.ForLibrary(library, ModelMatcher.LoadUserRules(MatchingFile));
+                    Info(library.IsEmpty
+                        ? "No Prepar3D aircraft with an ICAO type found: other aircraft are shown with your own model."
+                        : $"Prepar3D aircraft: {library.Rules.Count} liveries found for other aircraft.");
+                }
+                _session.Matcher = _p3dMatcher;
+                break;
+            case SimulatorKind.XPlane:
+                Info("X-Plane draws other aircraft with the CSL models installed for the SkyPilot plugin.");
+                break;
+            default:
+                _session.Matcher = _msfsMatcher;
+                if (!_fsltlReported)
+                {
+                    _fsltlReported = true;
+                    var fsltl = _msfsMatcher.Fsltl;
+                    Info(fsltl.IsInstalled
+                        ? $"FSLTL traffic models: {fsltl.Titles.Count} liveries found ({fsltl.PackagePath})."
+                        : "FSLTL package not found: other aircraft will be shown with default MSFS models. Install FS Live Traffic Liveries (fsltl-traffic-base) for correct models and liveries.");
+                }
+                break;
+        }
     }
 
     private async void OnNetworkConnectionChanged(bool connected)
@@ -385,6 +435,13 @@ public partial class MainWindow : Window
         _settings.KeepWindowOnTop = _vm.Topmost;
         var dialog = new SettingsWindow(_settings, _protector, () => _voice.MicLevel) { Owner = this };
         if (dialog.ShowDialog() != true) return;
+        if (_sim.Preferred != _settings.Simulator)
+        {
+            // Another simulator chosen: let go of the current one; the retry timer attaches to the new choice.
+            _sim.Preferred = _settings.Simulator;
+            if (_sim.ActiveKind is { } kind && _settings.Simulator != SimulatorKind.Auto && kind != _settings.Simulator) _sim.Disconnect();
+            _vm.SimError = null;
+        }
         _settings.Save(_settingsPath);
         _vm.Topmost = _settings.KeepWindowOnTop;
         _voice.ApplySettings(_settings);

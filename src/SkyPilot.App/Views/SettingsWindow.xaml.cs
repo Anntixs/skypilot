@@ -31,6 +31,10 @@ public partial class SettingsWindow : Window
         var server = settings.CurrentServer;
         ServerBox.Text = $"{server.Host}:{server.Port}";
         WebsiteBox.Text = settings.Website;
+        SimulatorBox.ItemsSource = SkyPilot.Core.Simulation.SimulatorKind.All.Select(k => new { k.Id, k.Title }).ToList();
+        SimulatorBox.SelectedValue = settings.Simulator;
+        if (SimulatorBox.SelectedIndex < 0) SimulatorBox.SelectedIndex = 0;
+        P3dDllBox.Text = settings.P3dSimConnectPath;
         SoundBox.IsChecked = settings.PlaySoundOnPrivateMessage;
         TopmostBox.IsChecked = settings.KeepWindowOnTop;
 
@@ -53,6 +57,12 @@ public partial class SettingsWindow : Window
             _meter.Stop();
             _capture?.Cancel();
         };
+    }
+
+    private void OnBrowseP3dClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Title = "Prepar3D SimConnect.dll", Filter = "SimConnect.dll|SimConnect.dll|DLL files (*.dll)|*.dll" };
+        if (dialog.ShowDialog(this) == true) P3dDllBox.Text = dialog.FileName;
     }
 
     /// <summary>"Default" and the devices; a saved device that is unplugged stays in the list.</summary>
@@ -158,6 +168,8 @@ public partial class SettingsWindow : Window
         server.Host = parts[0];
         server.Port = port;
         _settings.SelectedServer = server.Name;
+        _settings.Simulator = SimulatorBox.SelectedValue as string ?? SkyPilot.Core.Simulation.SimulatorKind.Auto;
+        _settings.P3dSimConnectPath = P3dDllBox.Text.Trim();
         _settings.PlaySoundOnPrivateMessage = SoundBox.IsChecked == true;
         _settings.KeepWindowOnTop = TopmostBox.IsChecked == true;
         _settings.InputDevice = SelectedDevice(InputBox);

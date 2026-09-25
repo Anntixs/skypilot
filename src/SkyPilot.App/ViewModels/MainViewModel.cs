@@ -61,6 +61,7 @@ public sealed class MainViewModel : Observable
 
     // ---- connection -----------------------------------------------------------------
 
+    private string _simName = "Simulator";
     public bool SimConnected { get => _simConnected; set { if (Set(ref _simConnected, value)) OnStatusChanged(); } }
 
     /// <summary>Why the simulator cannot be reached (e.g. SimConnect.dll missing), or null.</summary>
@@ -69,9 +70,12 @@ public sealed class MainViewModel : Observable
     public bool NetConnected { get => _netConnected; set { if (Set(ref _netConnected, value)) OnStatusChanged(); } }
     public string Callsign { get => _callsign; set { if (Set(ref _callsign, value)) OnStatusChanged(); } }
 
-    public string SimStatus => SimConnected ? "MSFS connected"
-        : SimError != null ? "SimConnect.dll missing"
-        : "Waiting for MSFS…";
+    /// <summary>The connected simulator ("Prepar3D", "X-Plane 12"…).</summary>
+    public string SimName { get => _simName; set { if (Set(ref _simName, value)) OnStatusChanged(); } }
+
+    public string SimStatus => SimConnected ? $"{SimName} connected"
+        : SimError != null ? "Simulator not reachable"
+        : "Waiting for the simulator…";
 
     public string ConnectButtonText => NetConnected ? "ONLINE" : "OFFLINE";
     public string WindowTitle => NetConnected ? $"SkyPilot — {Callsign}" : "SkyPilot";

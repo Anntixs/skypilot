@@ -25,6 +25,14 @@
       <TextBox x:Name="ServerBox" ToolTip="Host or host:port, e.g. 127.0.0.1:6809"/>
       <Label Content="SkyNetwork website"/>
       <TextBox x:Name="WebsiteBox" ToolTip="Where flight plans are filed"/>
+      <Label Content="Simulator"/>
+      <ComboBox x:Name="SimulatorBox" DisplayMemberPath="Title" SelectedValuePath="Id"
+                ToolTip="Automatic finds the simulator that is running"/>
+      <Label Content="Prepar3D SimConnect.dll (only if not found)"/>
+      <DockPanel>
+        <Button DockPanel.Dock="Right" Content="…" Padding="10,4" Margin="6,0,0,0" Click="OnBrowseP3dClick"/>
+        <TextBox x:Name="P3dDllBox" ToolTip="Empty: SkyPilot looks in the p3d folder next to it and in the Prepar3D installation"/>
+      </DockPanel>
       <CheckBox x:Name="SoundBox" Content="Play sound on private message" Margin="0,14,0,0"/>
       <CheckBox x:Name="TopmostBox" Content="Always on top" Margin="0,8,0,0"/>
     </StackPanel>

@@ -10,6 +10,8 @@ namespace SkyPilot.Core.Tests;
 public sealed class FakeSimulator : ISimulator
 {
     public string Name => "Fake";
+    public bool MatchesModels { get; set; }
+    public ConcurrentDictionary<string, AircraftModel> Models { get; } = new();
     public bool IsConnected { get; private set; }
     public ConcurrentDictionary<string, (string Title, AircraftState State)> Aircraft { get; } = new();
     public List<(int Radio, int Khz)> ComChanges { get; } = [];
@@ -35,7 +37,11 @@ public sealed class FakeSimulator : ISimulator
     public void Push(OwnAircraftData data) => OwnAircraftUpdated?.Invoke(this, data);
     public void FailCreate(string callsign, string title) => AircraftCreateFailed?.Invoke(this, new(callsign, title));
 
-    public void AddAircraft(string callsign, string modelTitle, AircraftState state) => Aircraft[callsign] = (modelTitle, state);
+    public void AddAircraft(string callsign, AircraftModel model, AircraftState state)
+    {
+        Aircraft[callsign] = (model.Title, state);
+        Models[callsign] = model;
+    }
 
     public void UpdateAircraft(string callsign, AircraftState state)
     {
