@@ -5,7 +5,13 @@ using SkyPilot.Core.Session;
 
 namespace SkyPilot.App.ViewModels;
 
-public sealed record AtcRow(string Callsign, string Frequency, string Facility, int FrequencyKhz);
+/// <param name="Letter">Current ATIS letter of an ATIS station, once known; otherwise empty.</param>
+/// <param name="AtisText">Last ATIS / controller information received from the station, or null (row tooltip).</param>
+public sealed record AtcRow(string Callsign, string Frequency, string Facility, int FrequencyKhz,
+    bool IsAtis = false, string Letter = "", string? AtisText = null)
+{
+    public bool HasLetter => Letter.Length > 0;
+}
 
 public sealed class MainViewModel : Observable
 {
@@ -207,12 +213,20 @@ public sealed class MainViewModel : Observable
         return tab;
     }
 
-    public void SetControllers(IEnumerable<AtcStation> stations)
+    public void SetControllers(IEnumerable<AtcStation> stations, IReadOnlyDictionary<string, AtisInfo> atis)
     {
         _stations = stations.ToList();
         Controllers.Clear();
         foreach (var s in _stations)
-            Controllers.Add(new AtcRow(s.Callsign, Frequency.Format(s.FrequencyKhz), AtcStation.FacilityName(s.Facility), s.FrequencyKhz));
+        {
+            atis.TryGetValue(s.Callsign, out var info);
+            string letter = s.IsAtis && info?.Letter is { } l ? l.ToString() : "";
+            string? text = info is { Lines.Count: > 0 }
+                ? $"{info.Text}\n\nПолучено в {info.ReceivedAt.ToLocalTime():HH:mm}"
+                : null;
+            Controllers.Add(new AtcRow(s.Callsign, Frequency.Format(s.FrequencyKhz), s.FacilityText, s.FrequencyKhz,
+                s.IsAtis, letter, text));
+        }
         RaisePropertyChanged(nameof(Com1Station));
         RaisePropertyChanged(nameof(Com2Station));
     }

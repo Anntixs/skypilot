@@ -191,14 +191,33 @@
                  Visibility="{Binding AtcVisible, Converter={StaticResource BoolToVis}}">
         <TextBlock DockPanel.Dock="Top" Text="ATC" Style="{StaticResource Caption}"/>
         <Border Style="{StaticResource Box}" Padding="2">
-          <ListBox ItemsSource="{Binding Controllers}" Background="Transparent" BorderThickness="0"
-                   MouseDoubleClick="OnControllerDoubleClick" ToolTip="Двойной щелчок — настроить радио TX">
+          <!-- Double click: tune the TX radio (ATIS stations: request the ATIS). Right click: menu -->
+          <ListBox x:Name="ControllerList" ItemsSource="{Binding Controllers}" Background="Transparent" BorderThickness="0"
+                   MouseDoubleClick="OnControllerDoubleClick"
+                   ToolTip="Двойной щелчок — настроить радио TX, на ATIS — запросить ATIS. Правый щелчок — меню">
+            <ListBox.ContextMenu>
+              <ContextMenu>
+                <MenuItem Header="Запросить ATIS" Click="OnRequestAtisClick"
+                          ToolTip="У станции ATIS — текст ATIS, у диспетчера — информация о нём"/>
+                <Separator/>
+                <MenuItem Header="Настроить COM1 на частоту" Click="OnTuneCom1Click"/>
+                <MenuItem Header="Настроить COM2 на частоту" Click="OnTuneCom2Click"/>
+              </ContextMenu>
+            </ListBox.ContextMenu>
             <ListBox.ItemTemplate>
               <DataTemplate>
-                <StackPanel Orientation="Horizontal" Margin="2,2">
-                  <TextBlock Text="{Binding Callsign}" Width="100" FontWeight="SemiBold"/>
-                  <TextBlock Text="{Binding Frequency}" Foreground="{StaticResource Accent}"/>
-                </StackPanel>
+                <!-- The row tooltip shows the last ATIS / controller information, once received -->
+                <DockPanel Margin="2,2" ToolTip="{Binding AtisText}" ToolTipService.ShowDuration="60000">
+                  <Border DockPanel.Dock="Right" Background="{StaticResource Accent}" CornerRadius="3" Padding="5,0"
+                          Margin="4,0,0,0" VerticalAlignment="Center"
+                          Visibility="{Binding HasLetter, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="{Binding Letter}" FontWeight="Bold" Foreground="{StaticResource Bg}"/>
+                  </Border>
+                  <TextBlock Text="{Binding Callsign}" Width="92" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                  <TextBlock Text="{Binding Frequency}" Width="56" Foreground="{StaticResource Accent}"/>
+                  <TextBlock Text="{Binding Facility}" Foreground="{StaticResource Muted}" FontSize="11"
+                             VerticalAlignment="Center"/>
+                </DockPanel>
               </DataTemplate>
             </ListBox.ItemTemplate>
           </ListBox>

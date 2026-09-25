@@ -10,6 +10,8 @@ public enum MessageKind
     Server,
     /// <summary>Network-wide broadcast from a supervisor.</summary>
     Broadcast,
+    /// <summary>ATIS or controller information received on request (From = station).</summary>
+    Atis,
     /// <summary>Client-side information.</summary>
     Info,
     Error,
