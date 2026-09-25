@@ -51,9 +51,9 @@ public class XPlaneTests
         Assert.False(sim.Connect());   // only asks the plugin
         Assert.Equal("HELLO 1", await plugin.ReceiveAsync("HELLO"));
         plugin.Send("HELLO 1 12060 1.0");
-        await WaitUntil(() => sim.IsConnected);
+        // The event is raised just after IsConnected flips: wait for the event itself.
+        await WaitUntil(() => connected == true);
         Assert.True(sim.Connect());
-        Assert.True(connected);
         Assert.Equal("X-Plane 12", sim.Name);
         Assert.True(sim.MatchesModels);
 
