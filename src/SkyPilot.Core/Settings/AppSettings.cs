@@ -49,6 +49,11 @@ public sealed class AppSettings
     /// <summary>Push-to-talk key or joystick button, e.g. "key:162" or "joy:0:4"; empty = none.</summary>
     public string PttKey { get; set; } = "";
 
+    /// <summary>Which simulator to use: "auto", "msfs", "p3d" or "xplane" (see SimulatorKind).</summary>
+    public string Simulator { get; set; } = "auto";
+    /// <summary>Prepar3D's SimConnect.dll when it is not found by itself; empty = look for it.</summary>
+    public string P3dSimConnectPath { get; set; } = "";
+
     /// <summary>MSFS Community folder with FSLTL. Empty: found automatically from UserCfg.opt.</summary>
     public string CommunityFolder { get; set; } = "";
 

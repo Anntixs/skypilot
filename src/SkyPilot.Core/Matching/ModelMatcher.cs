@@ -118,6 +118,42 @@ public sealed class ModelMatcher
         }
     }
 
+    private ModelMatcher(List<MatchingRule> rules, string fallback)
+    {
+        Fsltl = FsltlLibrary.Empty;
+        _rules = rules;
+        Fallback = fallback;
+    }
+
+    /// <summary>
+    /// For a simulator with its own installed aircraft (Prepar3D): the user's rules, then the scanned liveries. When
+    /// nothing is installed for a type, an A320 / 737 of the library stands in (and the simulator itself falls back
+    /// to the user's own aircraft).
+    /// </summary>
+    public static ModelMatcher ForLibrary(SimObjectsLibrary library, IEnumerable<MatchingRule>? userRules = null)
+    {
+        var rules = (userRules ?? []).Concat(library.Rules).ToList();
+        string fallback = new[] { "A320", "A20N", "B738", "A321", "B737" }
+            .Select(t => library.Rules.FirstOrDefault(r => Eq(r.Type, t))?.Title)
+            .FirstOrDefault(t => t != null) ?? library.Rules.FirstOrDefault()?.Title ?? FallbackTitle;
+        return new ModelMatcher(rules, fallback);
+    }
+
+    /// <summary>The user's own rules from model-matching.json (empty when the file is missing or broken).</summary>
+    public static List<MatchingRule> LoadUserRules(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+                return (JsonSerializer.Deserialize<List<MatchingRule>>(File.ReadAllText(path)) ?? [])
+                    .Where(r => !string.IsNullOrWhiteSpace(r.Type) && !string.IsNullOrWhiteSpace(r.Title)).ToList();
+        }
+        catch (JsonException)
+        {
+        }
+        return [];
+    }
+
     public IReadOnlyList<MatchingRule> Rules => _rules;
 
     public FsltlLibrary Fsltl { get; }

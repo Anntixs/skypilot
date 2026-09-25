@@ -97,6 +97,23 @@ public class SessionTests
     }
 
     [Fact]
+    public async Task Traffic_ForASimulatorThatPicksModels_GetsTypeAndAirline()
+    {
+        await using var server = new FakeFsdServer();
+        var (sim, session, _) = Create();
+        sim.MatchesModels = true;   // X-Plane: the plugin chooses the CSL model
+        await session.ConnectAsync(Info(server.Port));
+
+        var state = new AircraftState(55.98, 37.40, 5000, 0, 0, 90, 250, false);
+        await server.SendAsync(Packets.Position("SBI456", TransponderMode.ModeC, 1234, state, 5000));
+        server.Expect("#SB");
+        await server.SendAsync(Packets.PlaneInfoResponse("SBI456", "AFL123", "H/B748/L", "SBI"));
+        var model = await WaitFor(() => sim.Models.TryGetValue("SBI456", out var m) ? m : null);
+        Assert.Equal(new SkyPilot.Core.Simulation.AircraftModel("", "B748", "SBI"), model);
+        await session.DisconnectAsync();
+    }
+
+    [Fact]
     public async Task Messages_AreFilteredByFrequency()
     {
         await using var server = new FakeFsdServer();
@@ -170,14 +187,14 @@ public class SessionTests
 
         Assert.Equal("COM1: 118.700", await cmd.ExecuteAsync(".com1 118.7"));
         Assert.Equal((1, 118700), sim.ComChanges.Single());
-        Assert.Equal("Ответчик: 7000", await cmd.ExecuteAsync(".x 7000"));
+        Assert.Equal("Squawk 7000", await cmd.ExecuteAsync(".x 7000"));
         Assert.Equal(7000, sim.Squawk);
-        Assert.StartsWith("Код ответчика", await cmd.ExecuteAsync(".x 7800"));
+        Assert.StartsWith("Squawk code", await cmd.ExecuteAsync(".x 7800"));
         Assert.Null(await cmd.ExecuteAsync(".msg SBI456 hello there"));
         Assert.Equal("#TMAFL123:SBI456:hello there", server.Expect("#TM"));
         Assert.Null(await cmd.ExecuteAsync("request taxi"));
         Assert.Equal("#TMAFL123:@18100:request taxi", server.Expect("#TM"));
-        Assert.StartsWith("Неизвестная команда", await cmd.ExecuteAsync(".foo"));
+        Assert.StartsWith("Unknown command", await cmd.ExecuteAsync(".foo"));
         await session.DisconnectAsync();
     }
 

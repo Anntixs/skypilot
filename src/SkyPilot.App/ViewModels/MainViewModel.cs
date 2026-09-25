@@ -41,7 +41,7 @@ public sealed class MainViewModel : Observable
 
     public MainViewModel()
     {
-        RadioTab = new ChatTab("Радио", null);
+        RadioTab = new ChatTab("Radio", null);
         Tabs.Add(RadioTab);
         _selectedTab = RadioTab;
     }
@@ -61,6 +61,7 @@ public sealed class MainViewModel : Observable
 
     // ---- connection -----------------------------------------------------------------
 
+    private string _simName = "Simulator";
     public bool SimConnected { get => _simConnected; set { if (Set(ref _simConnected, value)) OnStatusChanged(); } }
 
     /// <summary>Why the simulator cannot be reached (e.g. SimConnect.dll missing), or null.</summary>
@@ -69,9 +70,12 @@ public sealed class MainViewModel : Observable
     public bool NetConnected { get => _netConnected; set { if (Set(ref _netConnected, value)) OnStatusChanged(); } }
     public string Callsign { get => _callsign; set { if (Set(ref _callsign, value)) OnStatusChanged(); } }
 
-    public string SimStatus => SimConnected ? "MSFS подключён"
-        : SimError != null ? "Нет SimConnect.dll"
-        : "Ожидание MSFS…";
+    /// <summary>The connected simulator ("Prepar3D", "X-Plane 12"…).</summary>
+    public string SimName { get => _simName; set { if (Set(ref _simName, value)) OnStatusChanged(); } }
+
+    public string SimStatus => SimConnected ? $"{SimName} connected"
+        : SimError != null ? "Simulator not reachable"
+        : "Waiting for the simulator…";
 
     public string ConnectButtonText => NetConnected ? "ONLINE" : "OFFLINE";
     public string WindowTitle => NetConnected ? $"SkyPilot — {Callsign}" : "SkyPilot";
@@ -144,13 +148,13 @@ public sealed class MainViewModel : Observable
 
     public bool VoiceFailing { get => _voiceFailing; set { if (Set(ref _voiceFailing, value)) OnVoiceChanged(); } }
     public bool VoiceConnected => VoiceState == VoiceState.Connected;
-    public string VoiceText => VoiceState == VoiceState.Connecting ? "ГОЛОС…" : "ГОЛОС";
+    public string VoiceText => VoiceState == VoiceState.Connecting ? "VOICE…" : "VOICE";
 
     public string VoiceTip =>
-        VoiceConnected ? "Голосовая связь: подключено. Щёлкните, чтобы переподключиться"
-        : VoiceFailing ? "Голосовая связь: нет связи с голосовым сервером. Щёлкните, чтобы переподключиться"
-        : VoiceState == VoiceState.Connecting ? "Голосовая связь: подключение…"
-        : "Голосовая связь включается при подключении к сети";
+        VoiceConnected ? "Voice: connected. Click to reconnect"
+        : VoiceFailing ? "Voice: no connection to the voice server. Click to reconnect"
+        : VoiceState == VoiceState.Connecting ? "Voice: connecting…"
+        : "Voice connects when you connect to the network";
 
     private void OnVoiceChanged()
     {
@@ -165,7 +169,7 @@ public sealed class MainViewModel : Observable
         set { if (Set(ref _transmitting, value)) RaisePropertyChanged(nameof(PttText)); }
     }
 
-    public string PttText => Transmitting ? "ПЕРЕДАЧА" : "PTT";
+    public string PttText => Transmitting ? "TX" : "PTT";
 
     /// <summary>"RX AFL123" while someone is heard on the radio, otherwise empty.</summary>
     public string Com1Heard { get => _com1Heard; private set => Set(ref _com1Heard, value); }
@@ -194,7 +198,7 @@ public sealed class MainViewModel : Observable
 
     public string FlightPlanText => FlightPlan is { } p
         ? $"{p.Departure} → {p.Destination}   {p.AircraftType}   {p.CruiseAltitude}"
-        : "Нет плана полёта";
+        : "No flight plan";
 
     // ---- misc ----------------------------------------------------------------------------
 
@@ -222,7 +226,7 @@ public sealed class MainViewModel : Observable
             atis.TryGetValue(s.Callsign, out var info);
             string letter = s.IsAtis && info?.Letter is { } l ? l.ToString() : "";
             string? text = info is { Lines.Count: > 0 }
-                ? $"{info.Text}\n\nПолучено в {info.ReceivedAt.ToLocalTime():HH:mm}"
+                ? $"{info.Text}\n\nReceived at {info.ReceivedAt.ToLocalTime():HH:mm}"
                 : null;
             Controllers.Add(new AtcRow(s.Callsign, Frequency.Format(s.FrequencyKhz), s.FacilityText, s.FrequencyKhz,
                 s.IsAtis, letter, text));

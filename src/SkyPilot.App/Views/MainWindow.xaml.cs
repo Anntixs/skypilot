@@ -14,6 +14,7 @@ using SkyPilot.Core.Matching;
 using SkyPilot.Core.Model;
 using SkyPilot.Core.Session;
 using SkyPilot.Core.Settings;
+using SkyPilot.Core.Simulation;
 using SkyPilot.Core.Voice;
 using SkyPilot.Core.Web;
 using SkyPilot.SimConnect;
@@ -29,7 +30,11 @@ public partial class MainWindow : Window
     private readonly DpapiProtector _protector = new();
     private readonly AppSettings _settings;
     private readonly MainViewModel _vm = new();
-    private readonly MsfsSimulator _sim = new();
+    private readonly XPlaneSimulator _xplane = new();
+    private readonly SimulatorHub _sim;
+    private readonly ModelMatcher _msfsMatcher;
+    private ModelMatcher? _p3dMatcher;
+    private bool _fsltlReported;
     private readonly NetworkSession _session;
     private readonly CommandProcessor _commands;
     private readonly PilotVoice _voice = new();
@@ -49,12 +54,20 @@ public partial class MainWindow : Window
         _settings = AppSettings.Load(_settingsPath);
         _vm.Topmost = _settings.KeepWindowOnTop;
 
+        _sim = new SimulatorHub(
+        [
+            (SimulatorKind.XPlane, _xplane),
+            (SimulatorKind.Msfs, new SimConnectSimulator(SimConnectFlavor.Msfs)),
+            (SimulatorKind.Prepar3D, new SimConnectSimulator(SimConnectFlavor.Prepar3D(() => _settings.P3dSimConnectPath))),
+        ])
+        { Preferred = _settings.Simulator };
         var fsltl = FsltlLibrary.Load(CommunityFolders.Find(_settings.CommunityFolder));
-        var matcher = ModelMatcher.Load(Path.Combine(AppSettings.DefaultDirectory, "model-matching.json"), fsltl);
-        _session = new NetworkSession(_sim, matcher);
+        _msfsMatcher = ModelMatcher.Load(MatchingFile, fsltl);
+        _session = new NetworkSession(_sim, _msfsMatcher);
         _commands = new CommandProcessor(_session, _sim);
 
-        _sim.ConnectionChanged += (_, connected) => Ui(() => _vm.SimConnected = connected);
+        _sim.ConnectionChanged += (_, connected) => Ui(() => OnSimConnectionChanged(connected));
+        _xplane.PluginLog += (_, text) => Ui(() => Info("X-Plane plugin: " + text));
         _sim.OwnAircraftUpdated += (_, own) => Ui(() => OnOwnAircraft(own));
         _session.ConnectionChanged += (_, connected) => Ui(() => OnNetworkConnectionChanged(connected));
         _session.MessageReceived += (_, m) => Ui(() => OnMessage(m));
@@ -84,10 +97,7 @@ public partial class MainWindow : Window
         _clock.Start();
 
         _vm.RadioTab.Add(new ChatMessage(MessageKind.Info, "SkyPilot",
-            "Добро пожаловать в SkyPilot! Запустите MSFS, затем нажмите OFFLINE, чтобы подключиться. Команды: .help", DateTime.UtcNow));
-        Info(fsltl.IsInstalled
-            ? $"Модели трафика FSLTL: найдено {fsltl.Titles.Count} ливрей ({fsltl.PackagePath})."
-            : "Пакет FSLTL не найден: другие самолёты будут показаны стандартными моделями MSFS. Установите FS Live Traffic Liveries (fsltl-traffic-base) для правильных моделей и ливрей.");
+            "Welcome to SkyPilot! Start your simulator (MSFS, Prepar3D or X-Plane), then click OFFLINE to connect. Commands: .help", DateTime.UtcNow));
         Closing += (_, _) =>
         {
             _settings.KeepWindowOnTop = _vm.Topmost;
@@ -104,12 +114,52 @@ public partial class MainWindow : Window
     private void Info(string text) => _vm.RadioTab.Add(new ChatMessage(MessageKind.Info, "SkyPilot", text, DateTime.UtcNow));
     private void Error(string text) => _vm.RadioTab.Add(new ChatMessage(MessageKind.Error, "SkyPilot", text, DateTime.UtcNow));
 
+    private static string MatchingFile => Path.Combine(AppSettings.DefaultDirectory, "model-matching.json");
+
     private void TryConnectSim()
     {
-        if (_sim.IsConnected) return;
+        if (_sim.Active != null) return;
         _sim.Connect();
-        if (_sim.LastError != null && _vm.SimError == null) Error(_sim.LastError);
+        // In automatic mode a missing MSFS library is no problem for someone flying Prepar3D: only the chosen simulator reports.
+        if (_sim.Preferred != SimulatorKind.Auto && _sim.LastError != null && _vm.SimError == null) Error(_sim.LastError);
         _vm.SimError = _sim.LastError;
+    }
+
+    private async void OnSimConnectionChanged(bool connected)
+    {
+        _vm.SimConnected = connected;
+        _vm.SimName = _sim.Name;
+        if (!connected) return;
+        Info($"Connected to {_sim.Name}.");
+        switch (_sim.ActiveKind)
+        {
+            case SimulatorKind.Prepar3D:
+                // The installed aircraft are read once: their titles are the models Prepar3D can show.
+                if (_p3dMatcher == null)
+                {
+                    var library = await Task.Run(() => SimObjectsLibrary.Load(SimObjectsLibrary.Prepar3DFolders(SimConnectFlavor.Prepar3DFolders())));
+                    _p3dMatcher = ModelMatcher.ForLibrary(library, ModelMatcher.LoadUserRules(MatchingFile));
+                    Info(library.IsEmpty
+                        ? "No Prepar3D aircraft with an ICAO type found: other aircraft are shown with your own model."
+                        : $"Prepar3D aircraft: {library.Rules.Count} liveries found for other aircraft.");
+                }
+                _session.Matcher = _p3dMatcher;
+                break;
+            case SimulatorKind.XPlane:
+                Info("X-Plane draws other aircraft with the CSL models installed for the SkyPilot plugin.");
+                break;
+            default:
+                _session.Matcher = _msfsMatcher;
+                if (!_fsltlReported)
+                {
+                    _fsltlReported = true;
+                    var fsltl = _msfsMatcher.Fsltl;
+                    Info(fsltl.IsInstalled
+                        ? $"FSLTL traffic models: {fsltl.Titles.Count} liveries found ({fsltl.PackagePath})."
+                        : "FSLTL package not found: other aircraft will be shown with default MSFS models. Install FS Live Traffic Liveries (fsltl-traffic-base) for correct models and liveries.");
+                }
+                break;
+        }
     }
 
     private async void OnNetworkConnectionChanged(bool connected)
@@ -161,7 +211,7 @@ public partial class MainWindow : Window
         }
         if (_settings.Cid == 0)
         {
-            MessageBox.Show(this, "Сначала укажите CID и пароль в настройках.", "SkyPilot");
+            MessageBox.Show(this, "Enter your CID and password in Settings first.", "SkyPilot");
             OnSettingsClick(sender, e);
             if (_settings.Cid == 0) return;
         }
@@ -180,7 +230,7 @@ public partial class MainWindow : Window
         }
         catch (FsdLoginException ex)
         {
-            Error("Не удалось подключиться: " + ex.Message);
+            Error("Could not connect: " + ex.Message);
         }
         finally
         {
@@ -198,12 +248,12 @@ public partial class MainWindow : Window
         var site = Website();
         if (site == null)
         {
-            Error("Укажите адрес сайта SkyNetwork в настройках.");
+            Error("Enter the SkyNetwork website address in Settings.");
             return;
         }
         var callsign = _session.IsConnected ? _session.Callsign : _settings.LastCallsign;
         Process.Start(new ProcessStartInfo(site.FlightPlanPage(callsign).ToString()) { UseShellExecute = true });
-        Info("План полёта подаётся на сайте. После подачи нажмите ОБНОВИТЬ.");
+        Info("File your flight plan on the website, then click REFRESH.");
     }
 
     private async void OnRefreshFlightPlanClick(object sender, RoutedEventArgs e) => await RefreshFlightPlanAsync(quiet: false);
@@ -218,7 +268,7 @@ public partial class MainWindow : Window
         var site = Website();
         if (site == null || _settings.Cid == 0)
         {
-            if (!quiet) Error("Укажите CID и адрес сайта SkyNetwork в настройках.");
+            if (!quiet) Error("Enter your CID and the SkyNetwork website address in Settings.");
             return;
         }
         FlightPlan? plan;
@@ -228,13 +278,13 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
-            if (!quiet) Error("Сайт SkyNetwork недоступен: " + ex.Message);
+            if (!quiet) Error("SkyNetwork website unavailable: " + ex.Message);
             return;
         }
         _vm.FlightPlan = plan;
         if (plan == null)
         {
-            if (!quiet) Info("На сайте нет поданного плана полёта.");
+            if (!quiet) Info("No flight plan filed on the website.");
             return;
         }
         if (_session.IsConnected && plan != _sentPlan)
@@ -283,11 +333,11 @@ public partial class MainWindow : Window
         int radio = box.Tag as string == "2" ? 2 : 1;
         if (!Frequency.TryParse(box.Text, out var khz))
         {
-            Error("Неверная частота. Пример: 118.100");
+            Error("Invalid frequency. Example: 118.100");
         }
         else if (!_sim.IsConnected)
         {
-            Error("Симулятор не подключён");
+            Error("Simulator not connected");
         }
         else
         {
@@ -302,8 +352,8 @@ public partial class MainWindow : Window
         if (e.Key is not (Key.Enter or Key.Escape)) return;
         if (e.Key == Key.Enter)
         {
-            if (!CommandProcessor.TryParseSquawk(SquawkBox.Text.Trim(), out var code)) Error("Код ответчика — 4 цифры от 0 до 7");
-            else if (!_sim.IsConnected) Error("Симулятор не подключён");
+            if (!CommandProcessor.TryParseSquawk(SquawkBox.Text.Trim(), out var code)) Error("Squawk code must be 4 digits from 0 to 7");
+            else if (!_sim.IsConnected) Error("Simulator not connected");
             else _sim.SetTransponderCode(code);
         }
         SquawkBox.GetBindingExpression(TextBox.TextProperty)?.UpdateTarget();
@@ -340,14 +390,14 @@ public partial class MainWindow : Window
         await Run(async () =>
         {
             await _session.RequestAtisAsync(row.Callsign);
-            Info($"Запрос ATIS: {row.Callsign}");
+            Info($"ATIS requested: {row.Callsign}");
         });
     }
 
     private void TuneCom(int radio, AtcRow row)
     {
         if (_sim.IsConnected) _sim.SetComFrequency(radio, row.FrequencyKhz);
-        else Error("Симулятор не подключён");
+        else Error("Simulator not connected");
     }
 
     // ---- voice -----------------------------------------------------------------------------------
@@ -366,13 +416,13 @@ public partial class MainWindow : Window
     private void OnVoiceClick(object sender, RoutedEventArgs e)
     {
         if (!_voice.Reconnect())
-            Info("Голосовая связь включается автоматически при подключении к сети.");
+            Info("Voice connects automatically when you connect to the network.");
     }
 
     private void OnPttDown(object sender, MouseButtonEventArgs e)
     {
-        if (!_session.IsConnected) Error("Нет подключения к сети");
-        else if (_voice.State != SkyNetwork.Voice.VoiceState.Connected) Error("Голос: нет связи с голосовым сервером");
+        if (!_session.IsConnected) Error("Not connected to the network");
+        else if (_voice.State != SkyNetwork.Voice.VoiceState.Connected) Error("Voice: no connection to the voice server");
         _voice.SetManualPtt(true);
     }
 
@@ -385,6 +435,13 @@ public partial class MainWindow : Window
         _settings.KeepWindowOnTop = _vm.Topmost;
         var dialog = new SettingsWindow(_settings, _protector, () => _voice.MicLevel) { Owner = this };
         if (dialog.ShowDialog() != true) return;
+        if (_sim.Preferred != _settings.Simulator)
+        {
+            // Another simulator chosen: let go of the current one; the retry timer attaches to the new choice.
+            _sim.Preferred = _settings.Simulator;
+            if (_sim.ActiveKind is { } kind && _settings.Simulator != SimulatorKind.Auto && kind != _settings.Simulator) _sim.Disconnect();
+            _vm.SimError = null;
+        }
         _settings.Save(_settingsPath);
         _vm.Topmost = _settings.KeepWindowOnTop;
         _voice.ApplySettings(_settings);

@@ -1,6 +1,6 @@
 # SkyPilot
 
-Пилотский клиент сети виртуальной авиации **SkyNetwork** для **Microsoft Flight Simulator 2020 и 2024**.
+Пилотский клиент сети виртуальной авиации **SkyNetwork** для **Microsoft Flight Simulator 2020 и 2024**, **Prepar3D v4–v6** и **X-Plane 11 и 12**.
 
 SkyPilot связывает симулятор с FSD-сервером сети
 
@@ -13,6 +13,30 @@ SkyPilot связывает симулятор с FSD-сервером сети
 - голосовая радиосвязь через голосовой сервер SkyNetwork: приём на COM1/COM2, передача по клавише PTT, радиоэффекты (см. [Голосовая связь](#голосовая-связь));
 - поддерживает режим ответчика Standby / Mode C и IDENT;
 - отвечает на запросы диспетчерских клиентов: тип ВС, имя, ping.
+
+## Симуляторы
+
+SkyPilot сам находит запущенный симулятор. В **Settings → Simulator** можно выбрать его явно: Automatic, MSFS, Prepar3D или X-Plane.
+
+**Microsoft Flight Simulator 2020 / 2024.** Нужен `SimConnect.dll` рядом с `SkyPilot.exe` (из MSFS SDK, папка `SimConnect SDK\lib`). Другие самолёты показываются моделями FSLTL (пакет fsltl-traffic-base), если он установлен, иначе стандартными моделями MSFS.
+
+**Prepar3D v4 / v5 / v6.** SkyPilot ищет `SimConnect.dll` Prepar3D:
+1. в папке `p3d` рядом с `SkyPilot.exe`;
+2. в папке установки Prepar3D и его SDK (по реестру);
+3. по пути, указанному в настройках.
+
+Если библиотека не нашлась, скопируйте `SimConnect.dll` из Prepar3D SDK (`lib\SimConnect`) в папку `p3d` рядом с `SkyPilot.exe`.
+
+Модели других самолётов берутся из установленных в Prepar3D самолётов: SkyPilot читает `aircraft.cfg` / `sim.cfg` в `SimObjects\Airplanes`, пакетах из `add-ons.cfg` и `Документы\Prepar3D vX Add-ons`. Подбор идёт по типу ИКАО (`icao_type_designator` или `atc_model`) и авиакомпании (`atc_parking_codes`). Если подходящей модели нет, самолёт показывается моделью вашего собственного самолёта.
+
+**X-Plane 11 / 12.** Нужен плагин SkyPilot, он есть в архиве выпуска (папка `XPlanePlugin`):
+1. Скопируйте папку `SkyPilot` в `X-Plane 12\Resources\plugins\` (или `X-Plane 11\Resources\plugins\`).
+2. Положите модели CSL (например, бесплатный пакет Bluebell) в `Resources\plugins\SkyPilot\Resources\CSL\`, каждый пакет своей папкой.
+3. Запустите X-Plane, затем SkyPilot: он подключится к плагину сам.
+
+Плагин показывает другие самолёты моделями CSL (модель подбирается по типу и авиакомпании) и передаёт SkyPilot данные вашего самолёта. Частоты COM1/COM2 и код ответчика SkyPilot выставляет в X-Plane. Плагин и SkyPilot общаются по UDP внутри компьютера (порт 51730).
+
+Свои правила подбора моделей для MSFS и Prepar3D можно задать в `%APPDATA%\SkyPilot\model-matching.json`: `[{"type": "B738", "airline": "AFL", "title": "…"}]`.
 
 ## Команды
 

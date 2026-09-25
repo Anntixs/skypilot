@@ -27,7 +27,7 @@ public sealed class ChatTab(string title, string? peer) : Observable
         string from = m.Kind switch
         {
             MessageKind.Radio when m.FrequencyKhz is { } f => $"{m.From} [{Core.Model.Frequency.Format(f)}]",
-            MessageKind.Broadcast => $"{m.From} [ВСЕМ]",
+            MessageKind.Broadcast => $"{m.From} [ALL]",
             MessageKind.Atis => $"{m.From} [ATIS]",
             _ => m.From,
         };

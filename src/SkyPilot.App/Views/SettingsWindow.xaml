@@ -1,7 +1,7 @@
 <Window x:Class="SkyPilot.App.Views.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Настройки" Width="720" SizeToContent="Height" ResizeMode="NoResize"
+        Title="Settings" Width="720" SizeToContent="Height" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner" Style="{StaticResource SkyWindow}">
   <Grid Margin="18">
     <Grid.ColumnDefinitions>
@@ -17,57 +17,65 @@
     <StackPanel>
       <Label Content="CID"/>
       <TextBox x:Name="CidBox"/>
-      <Label Content="Пароль"/>
+      <Label Content="Password"/>
       <PasswordBox x:Name="PasswordBox"/>
-      <Label Content="Имя"/>
-      <TextBox x:Name="NameBox" ToolTip="Так вас видят диспетчеры"/>
-      <Label Content="Адрес сервера"/>
-      <TextBox x:Name="ServerBox" ToolTip="Хост или хост:порт, например 127.0.0.1:6809"/>
-      <Label Content="Сайт SkyNetwork"/>
-      <TextBox x:Name="WebsiteBox" ToolTip="Здесь подаются планы полёта"/>
-      <CheckBox x:Name="SoundBox" Content="Звук при личном сообщении" Margin="0,14,0,0"/>
-      <CheckBox x:Name="TopmostBox" Content="Окно поверх остальных" Margin="0,8,0,0"/>
+      <Label Content="Name"/>
+      <TextBox x:Name="NameBox" ToolTip="The name controllers see"/>
+      <Label Content="Server address"/>
+      <TextBox x:Name="ServerBox" ToolTip="Host or host:port, e.g. 127.0.0.1:6809"/>
+      <Label Content="SkyNetwork website"/>
+      <TextBox x:Name="WebsiteBox" ToolTip="Where flight plans are filed"/>
+      <Label Content="Simulator"/>
+      <ComboBox x:Name="SimulatorBox" DisplayMemberPath="Title" SelectedValuePath="Id"
+                ToolTip="Automatic finds the simulator that is running"/>
+      <Label Content="Prepar3D SimConnect.dll (only if not found)"/>
+      <DockPanel>
+        <Button DockPanel.Dock="Right" Content="…" Padding="10,4" Margin="6,0,0,0" Click="OnBrowseP3dClick"/>
+        <TextBox x:Name="P3dDllBox" ToolTip="Empty: SkyPilot looks in the p3d folder next to it and in the Prepar3D installation"/>
+      </DockPanel>
+      <CheckBox x:Name="SoundBox" Content="Play sound on private message" Margin="0,14,0,0"/>
+      <CheckBox x:Name="TopmostBox" Content="Always on top" Margin="0,8,0,0"/>
     </StackPanel>
 
     <!-- Radio voice -->
     <StackPanel Grid.Column="2">
-      <Label Content="Микрофон"/>
+      <Label Content="Microphone"/>
       <ComboBox x:Name="InputBox"/>
-      <Label Content="Динамики / наушники"/>
+      <Label Content="Speakers / headphones"/>
       <ComboBox x:Name="OutputBox"/>
       <DockPanel>
         <TextBlock x:Name="MicGainText" DockPanel.Dock="Right" VerticalAlignment="Bottom" Margin="0,0,0,3"
                    Foreground="{StaticResource Muted}"/>
-        <Label Content="Усиление микрофона"/>
+        <Label Content="Microphone gain"/>
       </DockPanel>
       <Slider x:Name="MicGainSlider" Minimum="0" Maximum="300" SmallChange="5" LargeChange="25"
               IsMoveToPointEnabled="True" ValueChanged="OnSliderChanged"/>
       <ProgressBar x:Name="MicMeter" Height="6" Minimum="0" Maximum="1" Margin="0,4,0,0" BorderThickness="0"
                    Foreground="{StaticResource Ok}" Background="{StaticResource Panel}"
-                   ToolTip="Уровень микрофона (виден, когда голосовая связь подключена)"/>
+                   ToolTip="Microphone level (shown while voice is connected)"/>
       <DockPanel>
         <TextBlock x:Name="VolumeText" DockPanel.Dock="Right" VerticalAlignment="Bottom" Margin="0,0,0,3"
                    Foreground="{StaticResource Muted}"/>
-        <Label Content="Громкость приёма"/>
+        <Label Content="RX volume"/>
       </DockPanel>
       <Slider x:Name="VolumeSlider" Minimum="0" Maximum="100" SmallChange="5" LargeChange="10"
               IsMoveToPointEnabled="True" ValueChanged="OnSliderChanged"/>
-      <Label Content="Клавиша передачи (PTT)"/>
+      <Label Content="Push-to-talk (PTT) key"/>
       <DockPanel>
-        <Button x:Name="PttCaptureButton" DockPanel.Dock="Right" Content="НАЗНАЧИТЬ" Width="130" Margin="8,0,0,0"
-                Click="OnPttCaptureClick" ToolTip="Нажмите, затем нажмите клавишу или кнопку джойстика"/>
-        <Button DockPanel.Dock="Right" Content="✕" Margin="8,0,0,0" Click="OnPttClearClick" ToolTip="Убрать клавишу"/>
+        <Button x:Name="PttCaptureButton" DockPanel.Dock="Right" Content="ASSIGN" Width="130" Margin="8,0,0,0"
+                Click="OnPttCaptureClick" ToolTip="Click, then press a key or joystick button"/>
+        <Button DockPanel.Dock="Right" Content="✕" Margin="8,0,0,0" Click="OnPttClearClick" ToolTip="Clear key"/>
         <TextBox x:Name="PttBox" IsReadOnly="True" Focusable="False"/>
       </DockPanel>
-      <Label Content="Порт голосового сервера (UDP)"/>
-      <TextBox x:Name="VoicePortBox" ToolTip="Голосовой сервер работает на том же хосте, что и FSD-сервер. По умолчанию 3782"/>
+      <Label Content="Voice server port (UDP)"/>
+      <TextBox x:Name="VoicePortBox" ToolTip="The voice server runs on the same host as the FSD server. Default 3782"/>
     </StackPanel>
 
     <StackPanel Grid.Row="1" Grid.ColumnSpan="3">
       <TextBlock x:Name="ErrorText" Foreground="{StaticResource Bad}" TextWrapping="Wrap" Margin="0,10,0,0"/>
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
-        <Button Content="СОХРАНИТЬ" IsDefault="True" Click="OnOk" Style="{StaticResource GreenButton}" Margin="0,0,8,0"/>
-        <Button Content="ОТМЕНА" IsCancel="True"/>
+        <Button Content="SAVE" IsDefault="True" Click="OnOk" Style="{StaticResource GreenButton}" Margin="0,0,8,0"/>
+        <Button Content="CANCEL" IsCancel="True"/>
       </StackPanel>
     </StackPanel>
   </Grid>

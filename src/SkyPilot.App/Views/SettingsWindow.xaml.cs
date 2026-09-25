@@ -10,7 +10,7 @@ namespace SkyPilot.App.Views;
 
 public partial class SettingsWindow : Window
 {
-    private const string DefaultDevice = "По умолчанию";
+    private const string DefaultDevice = "Default";
 
     private readonly AppSettings _settings;
     private readonly ISecretProtector _protector;
@@ -31,6 +31,10 @@ public partial class SettingsWindow : Window
         var server = settings.CurrentServer;
         ServerBox.Text = $"{server.Host}:{server.Port}";
         WebsiteBox.Text = settings.Website;
+        SimulatorBox.ItemsSource = SkyPilot.Core.Simulation.SimulatorKind.All.Select(k => new { k.Id, k.Title }).ToList();
+        SimulatorBox.SelectedValue = settings.Simulator;
+        if (SimulatorBox.SelectedIndex < 0) SimulatorBox.SelectedIndex = 0;
+        P3dDllBox.Text = settings.P3dSimConnectPath;
         SoundBox.IsChecked = settings.PlaySoundOnPrivateMessage;
         TopmostBox.IsChecked = settings.KeepWindowOnTop;
 
@@ -55,7 +59,13 @@ public partial class SettingsWindow : Window
         };
     }
 
-    /// <summary>"По умолчанию" and the devices; a saved device that is unplugged stays in the list.</summary>
+    private void OnBrowseP3dClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Title = "Prepar3D SimConnect.dll", Filter = "SimConnect.dll|SimConnect.dll|DLL files (*.dll)|*.dll" };
+        if (dialog.ShowDialog(this) == true) P3dDllBox.Text = dialog.FileName;
+    }
+
+    /// <summary>"Default" and the devices; a saved device that is unplugged stays in the list.</summary>
     private static void FillDevices(ComboBox box, IReadOnlyList<string> devices, string selected)
     {
         box.Items.Add(DefaultDevice);
@@ -67,16 +77,16 @@ public partial class SettingsWindow : Window
     private static string SelectedDevice(ComboBox box) =>
         box.SelectedIndex > 0 && box.SelectedItem is string name ? name : "";
 
-    /// <summary>The PTT control in Russian ("не назначена", "Джойстик 1, кнопка 5", or the key name).</summary>
+    /// <summary>The PTT control in English ("not assigned", "Joystick 1, button 5", or the key name).</summary>
     private static string Describe(PttBinding b) => b.Kind switch
     {
-        PttKind.None => "не назначена",
-        PttKind.Joystick => $"Джойстик {b.Device + 1}, кнопка {b.Code + 1}",
+        PttKind.None => "not assigned",
+        PttKind.Joystick => $"Joystick {b.Device + 1}, button {b.Code + 1}",
         _ => b.Code switch
         {
-            0x04 => "Средняя кнопка мыши",
-            0x05 => "Кнопка мыши 4",
-            0x06 => "Кнопка мыши 5",
+            0x04 => "Middle mouse button",
+            0x05 => "Mouse button 4",
+            0x06 => "Mouse button 5",
             _ => b.Describe(),
         },
     };
@@ -96,8 +106,8 @@ public partial class SettingsWindow : Window
         }
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         _capture = cts;
-        PttCaptureButton.Content = "ОТМЕНА";
-        PttBox.Text = "Нажмите клавишу или кнопку джойстика…";
+        PttCaptureButton.Content = "CANCEL";
+        PttBox.Text = "Press a key or joystick button…";
         try
         {
             // Polled off the UI thread so the window stays responsive.
@@ -112,7 +122,7 @@ public partial class SettingsWindow : Window
         finally
         {
             _capture = null;
-            PttCaptureButton.Content = "НАЗНАЧИТЬ";
+            PttCaptureButton.Content = "ASSIGN";
             PttBox.Text = Describe(_ptt);
         }
     }
@@ -128,25 +138,25 @@ public partial class SettingsWindow : Window
     {
         if (!int.TryParse(CidBox.Text.Trim(), out var cid) || cid <= 0)
         {
-            ErrorText.Text = "CID — положительное число";
+            ErrorText.Text = "CID must be a positive number";
             return;
         }
         var parts = ServerBox.Text.Trim().Split(':');
         int port = 6809;
         if (parts[0].Length == 0 || parts.Length > 2 || parts.Length == 2 && !int.TryParse(parts[1], out port))
         {
-            ErrorText.Text = "Адрес сервера: хост или хост:порт, например 127.0.0.1:6809";
+            ErrorText.Text = "Server address: host or host:port, e.g. 127.0.0.1:6809";
             return;
         }
         string website = WebsiteBox.Text.Trim();
         if (website.Length > 0 && !WebsiteClient.TryParseSite(website, out _))
         {
-            ErrorText.Text = "Адрес сайта: например skynetwork.example или http://127.0.0.1:8000";
+            ErrorText.Text = "Website address: e.g. skynetwork.example or http://127.0.0.1:8000";
             return;
         }
         if (!int.TryParse(VoicePortBox.Text.Trim(), out var voicePort) || voicePort is <= 0 or > 65535)
         {
-            ErrorText.Text = "Порт голосового сервера — число от 1 до 65535 (по умолчанию 3782)";
+            ErrorText.Text = "Voice server port must be a number from 1 to 65535 (default 3782)";
             return;
         }
         _settings.Cid = cid;
@@ -158,6 +168,8 @@ public partial class SettingsWindow : Window
         server.Host = parts[0];
         server.Port = port;
         _settings.SelectedServer = server.Name;
+        _settings.Simulator = SimulatorBox.SelectedValue as string ?? SkyPilot.Core.Simulation.SimulatorKind.Auto;
+        _settings.P3dSimConnectPath = P3dDllBox.Text.Trim();
         _settings.PlaySoundOnPrivateMessage = SoundBox.IsChecked == true;
         _settings.KeepWindowOnTop = TopmostBox.IsChecked == true;
         _settings.InputDevice = SelectedDevice(InputBox);

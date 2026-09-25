@@ -47,10 +47,10 @@ public sealed class FsdClient : IAsyncDisposable
             await WriteAsync(stream, loginPacket, timeout.Token).ConfigureAwait(false);
 
             var first = await reader.ReadLineAsync(timeout.Token).ConfigureAwait(false)
-                        ?? throw new FsdLoginException("Сервер закрыл соединение");
+                        ?? throw new FsdLoginException("Server closed the connection");
             var packet = FsdPacket.Parse(first);
             if (packet?.Command == "$ER")
-                throw new FsdLoginException(packet[4].Length > 0 ? packet[4] : "Ошибка входа " + packet[2]);
+                throw new FsdLoginException(packet[4].Length > 0 ? packet[4] : "Login error " + packet[2]);
 
             _tcp = tcp;
             _stream = stream;
@@ -61,7 +61,7 @@ public sealed class FsdClient : IAsyncDisposable
         catch (Exception e) when (e is not FsdLoginException)
         {
             tcp.Dispose();
-            throw new FsdLoginException(e is OperationCanceledException ? "Сервер не отвечает" : e.Message);
+            throw new FsdLoginException(e is OperationCanceledException ? "Server not responding" : e.Message);
         }
         catch
         {
@@ -94,7 +94,7 @@ public sealed class FsdClient : IAsyncDisposable
 
     private async Task ReadLoopAsync(StreamReader reader, CancellationToken ct)
     {
-        string reason = "Соединение закрыто сервером";
+        string reason = "Connection closed by the server";
         try
         {
             while (!ct.IsCancellationRequested)
@@ -104,15 +104,15 @@ public sealed class FsdClient : IAsyncDisposable
                 var packet = FsdPacket.Parse(line);
                 if (packet != null) PacketReceived?.Invoke(this, packet);
             }
-            if (ct.IsCancellationRequested) reason = "Отключено";
+            if (ct.IsCancellationRequested) reason = "Disconnected";
         }
         catch (OperationCanceledException)
         {
-            reason = "Отключено";
+            reason = "Disconnected";
         }
         catch (Exception e) when (e is IOException or ObjectDisposedException or SocketException)
         {
-            reason = "Потеряно соединение с сервером";
+            reason = "Lost connection to the server";
         }
         Close();
         Disconnected?.Invoke(this, reason);

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
-    Talks to MSFS 2020/2024 through the SimConnect C API. SimConnect.dll is loaded at run time
-    (next to SkyPilot.exe or from the MSFS SDK), so no SDK is needed to build.
+    Talks to MSFS 2020/2024 and Prepar3D v4-v6 through the SimConnect C API. SimConnect.dll is loaded at run time
+    (next to SkyPilot.exe, from the MSFS SDK or the Prepar3D installation), so no SDK is needed to build.
   -->
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>
@@ -9,7 +9,7 @@
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
     <RootNamespace>SkyPilot.SimConnect</RootNamespace>
-    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
