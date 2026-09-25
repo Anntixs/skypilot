@@ -84,7 +84,7 @@ public sealed class MsfsSimulator : ISimulator
             if (_handle != IntPtr.Zero) return true;
             if (!Native.TryLoad())
             {
-                LastError = "SimConnect.dll не найден — положите его рядом с SkyPilot.exe (из MSFS SDK: SimConnect SDK\\lib)";
+                LastError = "SimConnect.dll not found — place it next to SkyPilot.exe (from the MSFS SDK: SimConnect SDK\\lib)";
                 return false;
             }
             var signal = new AutoResetEvent(false);
@@ -96,7 +96,7 @@ public sealed class MsfsSimulator : ISimulator
             catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
             {
                 signal.Dispose();
-                LastError = "Не удалось загрузить SimConnect.dll: " + e.Message;
+                LastError = "Could not load SimConnect.dll: " + e.Message;
                 return false;
             }
             if (hr != 0 || _handle == IntPtr.Zero)

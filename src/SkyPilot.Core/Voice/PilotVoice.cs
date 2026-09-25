@@ -58,7 +58,7 @@ public sealed class PilotVoice : IDisposable
     /// <summary>Connection state, transmission or received stations changed.</summary>
     public event EventHandler? Changed;
 
-    /// <summary>A line for the messages area (Russian).</summary>
+    /// <summary>A line for the messages area (English).</summary>
     public event EventHandler<string>? Info;
     public event EventHandler<string>? Error;
 
@@ -145,7 +145,7 @@ public sealed class PilotVoice : IDisposable
             }
             catch (Exception ex) when (ex is VoiceException or SocketException or OperationCanceledException or ArgumentException)
             {
-                if (!ct.IsCancellationRequested) OnFailed(login, "нет связи с голосовым сервером", ex.Message);
+                if (!ct.IsCancellationRequested) OnFailed(login, "no connection to the voice server", ex.Message);
                 return;
             }
             finally
@@ -160,7 +160,7 @@ public sealed class PilotVoice : IDisposable
                 return;
             }
             _failing = false;
-            Info?.Invoke(this, $"Голос: подключено к {login.Host}:{login.Port}");
+            Info?.Invoke(this, $"Voice: connected to {login.Host}:{login.Port}");
             Changed?.Invoke(this, EventArgs.Empty);
         }
         finally
@@ -175,13 +175,13 @@ public sealed class PilotVoice : IDisposable
         if (reason.Length > 0 && state != VoiceState.Disconnected)
         {
             // The connection is fine but the microphone or speakers could not be opened.
-            Error?.Invoke(this, "Голос: " + Describe(reason));
+            Error?.Invoke(this, "Voice: " + Describe(reason));
         }
         else if (reason.Length > 0 && !_connecting)
         {
             VoiceLogin? login;
             lock (_gate) login = _login;
-            if (login != null) OnFailed(login, "связь с голосовым сервером потеряна", reason);
+            if (login != null) OnFailed(login, "lost connection to the voice server", reason);
         }
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -199,19 +199,19 @@ public sealed class PilotVoice : IDisposable
         }
         // Report once; the retries every 30 s stay quiet until one succeeds.
         if (first)
-            Error?.Invoke(this, $"Голос: {what} ({Describe(reason)}). Повтор каждые {_retryInterval.TotalSeconds:0} с; " +
-                                "щёлкните ГОЛОС, чтобы переподключиться сейчас.");
+            Error?.Invoke(this, $"Voice: {what} ({Describe(reason)}). Retrying every {_retryInterval.TotalSeconds:0} s; " +
+                                "click VOICE to reconnect now.");
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
-    /// <summary>The voice client's reasons in Russian (server reasons are shown as they are).</summary>
+    /// <summary>The voice client's reasons in English (server reasons are shown as they are).</summary>
     internal static string Describe(string reason) => reason switch
     {
-        "Voice server not responding" => "голосовой сервер не отвечает",
-        "Disconnected by the server" => "отключено сервером",
-        _ when reason.StartsWith("Cannot resolve ", StringComparison.Ordinal) => "не найден адрес " + reason["Cannot resolve ".Length..],
+        "Voice server not responding" => "voice server not responding",
+        "Disconnected by the server" => "disconnected by the server",
+        _ when reason.StartsWith("Cannot resolve ", StringComparison.Ordinal) => "cannot resolve " + reason["Cannot resolve ".Length..],
         _ when reason.StartsWith("Audio device error: ", StringComparison.Ordinal) =>
-            "ошибка аудиоустройства: " + reason["Audio device error: ".Length..],
+            "audio device error: " + reason["Audio device error: ".Length..],
         _ => reason,
     };
 

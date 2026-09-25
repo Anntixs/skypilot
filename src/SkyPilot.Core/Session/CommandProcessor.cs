@@ -10,15 +10,15 @@ namespace SkyPilot.Core.Session;
 public sealed class CommandProcessor(NetworkSession session, ISimulator sim)
 {
     public const string Help =
-        ".com1 118.100 / .com2 121.500 — настроить радио\n" +
-        ".x 7000 — код ответчика (также .xpdr, .squawk)\n" +
-        ".ident — опознавание (IDENT)\n" +
-        ".modec — переключить режим ответчика Standby/Mode C\n" +
-        ".msg ПОЗЫВНОЙ текст — личное сообщение\n" +
-        ".atis СТАНЦИЯ — запросить ATIS (у диспетчера — информацию о нём)\n" +
-        ".wallop текст — вызвать супервайзера (помощь, нарушение, проблема)\n" +
-        ".disconnect — отключиться от сети\n" +
-        "Текст без точки отправляется на частоту радио с включённым TX.";
+        ".com1 118.100 / .com2 121.500 — tune radio\n" +
+        ".x 7000 — set squawk code (also .xpdr, .squawk)\n" +
+        ".ident — squawk ident (IDENT)\n" +
+        ".modec — toggle transponder Standby/Mode C\n" +
+        ".msg CALLSIGN text — private message\n" +
+        ".atis STATION — request ATIS (controller info for a controller)\n" +
+        ".wallop text — call a supervisor (help, violation, problem)\n" +
+        ".disconnect — disconnect from the network\n" +
+        "Text without a leading dot is sent on the TX radio frequency.";
 
     /// <summary>Execute one line. Returns feedback for the user, or null.</summary>
     public async Task<string?> ExecuteAsync(string line)
@@ -38,37 +38,37 @@ public sealed class CommandProcessor(NetworkSession session, ISimulator sim)
         {
             case ".com1":
             case ".com2":
-                if (!Frequency.TryParse(arg, out var khz)) return "Неверная частота. Пример: .com1 118.100";
+                if (!Frequency.TryParse(arg, out var khz)) return "Invalid frequency. Example: .com1 118.100";
                 RequireSim();
                 sim.SetComFrequency(cmd == ".com1" ? 1 : 2, khz);
                 return $"{cmd[1..].ToUpperInvariant()}: {Frequency.Format(khz)}";
             case ".x":
             case ".xpdr":
             case ".squawk":
-                if (!TryParseSquawk(arg, out var code)) return "Код ответчика — 4 цифры от 0 до 7";
+                if (!TryParseSquawk(arg, out var code)) return "Squawk code must be 4 digits from 0 to 7";
                 RequireSim();
                 sim.SetTransponderCode(code);
-                return $"Ответчик: {code:0000}";
+                return $"Squawk {code:0000}";
             case ".ident":
                 session.Ident();
                 return "IDENT";
             case ".modec":
                 session.ModeC = !session.ModeC;
-                return session.ModeC ? "Ответчик: Mode C" : "Ответчик: Standby";
+                return session.ModeC ? "Transponder: Mode C" : "Transponder: Standby";
             case ".msg":
             case ".chat":
-                if (parts.Length < 3) return "Пример: .msg AFL123 привет";
+                if (parts.Length < 3) return "Example: .msg AFL123 hello";
                 await session.SendPrivateAsync(arg, parts[2]).ConfigureAwait(false);
                 return null;
             case ".atis":
-                if (arg.Length == 0) return "Пример: .atis UUEE_ATIS";
+                if (arg.Length == 0) return "Example: .atis UUEE_ATIS";
                 await session.RequestAtisAsync(arg).ConfigureAwait(false);
-                return $"Запрос ATIS: {arg.ToUpperInvariant()}";
+                return $"ATIS requested: {arg.ToUpperInvariant()}";
             case ".wallop":
                 string request = line[cmd.Length..].Trim();
-                if (request.Length == 0) return "Пример: .wallop AFL123 не отвечает на частоте";
+                if (request.Length == 0) return "Example: .wallop AFL123 not responding on frequency";
                 await session.SendSupervisorRequestAsync(request).ConfigureAwait(false);
-                return "Запрос отправлен супервайзерам";
+                return "Request sent to supervisors";
             case ".disconnect":
                 await session.DisconnectAsync().ConfigureAwait(false);
                 return null;
@@ -76,7 +76,7 @@ public sealed class CommandProcessor(NetworkSession session, ISimulator sim)
             case ".?":
                 return Help;
             default:
-                return $"Неизвестная команда {cmd}. Введите .help";
+                return $"Unknown command {cmd}. Type .help";
         }
     }
 
@@ -89,6 +89,6 @@ public sealed class CommandProcessor(NetworkSession session, ISimulator sim)
 
     private void RequireSim()
     {
-        if (!sim.IsConnected) throw new InvalidOperationException("Симулятор не подключён");
+        if (!sim.IsConnected) throw new InvalidOperationException("Simulator not connected");
     }
 }

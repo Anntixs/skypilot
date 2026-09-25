@@ -25,12 +25,12 @@ public partial class ConnectWindow : Window
         string type = TypeBox.Text.Trim().ToUpperInvariant();
         if (!NetworkSession.IsValidCallsign(callsign))
         {
-            ErrorText.Text = "Позывной: 2–12 латинских букв и цифр";
+            ErrorText.Text = "Callsign: 2–12 Latin letters and digits";
             return;
         }
         if (type.Length is < 2 or > 4)
         {
-            ErrorText.Text = "Укажите ICAO-код типа ВС";
+            ErrorText.Text = "Enter the ICAO aircraft type code";
             return;
         }
         _settings.LastCallsign = callsign;

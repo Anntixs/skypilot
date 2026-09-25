@@ -84,10 +84,10 @@ public partial class MainWindow : Window
         _clock.Start();
 
         _vm.RadioTab.Add(new ChatMessage(MessageKind.Info, "SkyPilot",
-            "Добро пожаловать в SkyPilot! Запустите MSFS, затем нажмите OFFLINE, чтобы подключиться. Команды: .help", DateTime.UtcNow));
+            "Welcome to SkyPilot! Start MSFS, then click OFFLINE to connect. Commands: .help", DateTime.UtcNow));
         Info(fsltl.IsInstalled
-            ? $"Модели трафика FSLTL: найдено {fsltl.Titles.Count} ливрей ({fsltl.PackagePath})."
-            : "Пакет FSLTL не найден: другие самолёты будут показаны стандартными моделями MSFS. Установите FS Live Traffic Liveries (fsltl-traffic-base) для правильных моделей и ливрей.");
+            ? $"FSLTL traffic models: {fsltl.Titles.Count} liveries found ({fsltl.PackagePath})."
+            : "FSLTL package not found: other aircraft will be shown with default MSFS models. Install FS Live Traffic Liveries (fsltl-traffic-base) for correct models and liveries.");
         Closing += (_, _) =>
         {
             _settings.KeepWindowOnTop = _vm.Topmost;
@@ -161,7 +161,7 @@ public partial class MainWindow : Window
         }
         if (_settings.Cid == 0)
         {
-            MessageBox.Show(this, "Сначала укажите CID и пароль в настройках.", "SkyPilot");
+            MessageBox.Show(this, "Enter your CID and password in Settings first.", "SkyPilot");
             OnSettingsClick(sender, e);
             if (_settings.Cid == 0) return;
         }
@@ -180,7 +180,7 @@ public partial class MainWindow : Window
         }
         catch (FsdLoginException ex)
         {
-            Error("Не удалось подключиться: " + ex.Message);
+            Error("Could not connect: " + ex.Message);
         }
         finally
         {
@@ -198,12 +198,12 @@ public partial class MainWindow : Window
         var site = Website();
         if (site == null)
         {
-            Error("Укажите адрес сайта SkyNetwork в настройках.");
+            Error("Enter the SkyNetwork website address in Settings.");
             return;
         }
         var callsign = _session.IsConnected ? _session.Callsign : _settings.LastCallsign;
         Process.Start(new ProcessStartInfo(site.FlightPlanPage(callsign).ToString()) { UseShellExecute = true });
-        Info("План полёта подаётся на сайте. После подачи нажмите ОБНОВИТЬ.");
+        Info("File your flight plan on the website, then click REFRESH.");
     }
 
     private async void OnRefreshFlightPlanClick(object sender, RoutedEventArgs e) => await RefreshFlightPlanAsync(quiet: false);
@@ -218,7 +218,7 @@ public partial class MainWindow : Window
         var site = Website();
         if (site == null || _settings.Cid == 0)
         {
-            if (!quiet) Error("Укажите CID и адрес сайта SkyNetwork в настройках.");
+            if (!quiet) Error("Enter your CID and the SkyNetwork website address in Settings.");
             return;
         }
         FlightPlan? plan;
@@ -228,13 +228,13 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
-            if (!quiet) Error("Сайт SkyNetwork недоступен: " + ex.Message);
+            if (!quiet) Error("SkyNetwork website unavailable: " + ex.Message);
             return;
         }
         _vm.FlightPlan = plan;
         if (plan == null)
         {
-            if (!quiet) Info("На сайте нет поданного плана полёта.");
+            if (!quiet) Info("No flight plan filed on the website.");
             return;
         }
         if (_session.IsConnected && plan != _sentPlan)
@@ -283,11 +283,11 @@ public partial class MainWindow : Window
         int radio = box.Tag as string == "2" ? 2 : 1;
         if (!Frequency.TryParse(box.Text, out var khz))
         {
-            Error("Неверная частота. Пример: 118.100");
+            Error("Invalid frequency. Example: 118.100");
         }
         else if (!_sim.IsConnected)
         {
-            Error("Симулятор не подключён");
+            Error("Simulator not connected");
         }
         else
         {
@@ -302,8 +302,8 @@ public partial class MainWindow : Window
         if (e.Key is not (Key.Enter or Key.Escape)) return;
         if (e.Key == Key.Enter)
         {
-            if (!CommandProcessor.TryParseSquawk(SquawkBox.Text.Trim(), out var code)) Error("Код ответчика — 4 цифры от 0 до 7");
-            else if (!_sim.IsConnected) Error("Симулятор не подключён");
+            if (!CommandProcessor.TryParseSquawk(SquawkBox.Text.Trim(), out var code)) Error("Squawk code must be 4 digits from 0 to 7");
+            else if (!_sim.IsConnected) Error("Simulator not connected");
             else _sim.SetTransponderCode(code);
         }
         SquawkBox.GetBindingExpression(TextBox.TextProperty)?.UpdateTarget();
@@ -340,14 +340,14 @@ public partial class MainWindow : Window
         await Run(async () =>
         {
             await _session.RequestAtisAsync(row.Callsign);
-            Info($"Запрос ATIS: {row.Callsign}");
+            Info($"ATIS requested: {row.Callsign}");
         });
     }
 
     private void TuneCom(int radio, AtcRow row)
     {
         if (_sim.IsConnected) _sim.SetComFrequency(radio, row.FrequencyKhz);
-        else Error("Симулятор не подключён");
+        else Error("Simulator not connected");
     }
 
     // ---- voice -----------------------------------------------------------------------------------
@@ -366,13 +366,13 @@ public partial class MainWindow : Window
     private void OnVoiceClick(object sender, RoutedEventArgs e)
     {
         if (!_voice.Reconnect())
-            Info("Голосовая связь включается автоматически при подключении к сети.");
+            Info("Voice connects automatically when you connect to the network.");
     }
 
     private void OnPttDown(object sender, MouseButtonEventArgs e)
     {
-        if (!_session.IsConnected) Error("Нет подключения к сети");
-        else if (_voice.State != SkyNetwork.Voice.VoiceState.Connected) Error("Голос: нет связи с голосовым сервером");
+        if (!_session.IsConnected) Error("Not connected to the network");
+        else if (_voice.State != SkyNetwork.Voice.VoiceState.Connected) Error("Voice: no connection to the voice server");
         _voice.SetManualPtt(true);
     }
 

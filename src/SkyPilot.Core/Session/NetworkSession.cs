@@ -92,12 +92,12 @@ public sealed partial class NetworkSession : IAsyncDisposable
 
     public async Task ConnectAsync(ConnectInfo info, CancellationToken ct = default)
     {
-        if (IsConnected) throw new InvalidOperationException("Уже подключено");
+        if (IsConnected) throw new InvalidOperationException("Already connected");
         if (!_sim.IsConnected || _own == null)
-            throw new FsdLoginException("Симулятор не подключён. Запустите MSFS и загрузитесь в самолёт.");
+            throw new FsdLoginException("Simulator not connected. Start MSFS and load into an aircraft.");
         info = info with { Callsign = info.Callsign.Trim().ToUpperInvariant(), TypeCode = info.TypeCode.Trim().ToUpperInvariant() };
-        if (!IsValidCallsign(info.Callsign)) throw new FsdLoginException("Неверный позывной");
-        if (info.TypeCode.Length is < 2 or > 4) throw new FsdLoginException("Укажите ICAO-код типа ВС (например A20N)");
+        if (!IsValidCallsign(info.Callsign)) throw new FsdLoginException("Invalid callsign");
+        if (info.TypeCode.Length is < 2 or > 4) throw new FsdLoginException("Enter the ICAO aircraft type code (e.g. A20N)");
 
         var fsd = new FsdClient();
         fsd.PacketReceived += OnPacket;
@@ -119,7 +119,7 @@ public sealed partial class NetworkSession : IAsyncDisposable
         _positionTimer = new Timer(_ => _ = SendPositionAsync(), null, TimeSpan.Zero, PositionInterval);
         _renderTimer = new Timer(_ => RenderTick(), null, RenderInterval, RenderInterval);
         ConnectionChanged?.Invoke(this, true);
-        Info($"Подключено к {info.Host} как {info.Callsign}");
+        Info($"Connected to {info.Host} as {info.Callsign}");
     }
 
     public async Task DisconnectAsync()
@@ -163,7 +163,7 @@ public sealed partial class NetworkSession : IAsyncDisposable
         _own = null;
         if (IsConnected)
         {
-            Error("Потеряна связь с симулятором — отключаюсь от сети");
+            Error("Lost connection to the simulator — disconnecting from the network");
             _ = DisconnectAsync();
         }
     }
@@ -182,9 +182,9 @@ public sealed partial class NetworkSession : IAsyncDisposable
     public async Task SendRadioAsync(string text)
     {
         var fsd = RequireConnection();
-        var own = _own ?? throw new InvalidOperationException("Нет данных от симулятора");
+        var own = _own ?? throw new InvalidOperationException("No data from the simulator");
         int khz = TransmitRadio == 2 ? own.Com2Khz : own.Com1Khz;
-        if (khz is < 118000 or > 136990) throw new InvalidOperationException($"COM{TransmitRadio} не настроен");
+        if (khz is < 118000 or > 136990) throw new InvalidOperationException($"COM{TransmitRadio} not tuned");
         await fsd.SendAsync(Packets.TextMessage(Callsign, Frequency.ToFsdAddress(khz), text)).ConfigureAwait(false);
         Raise(new ChatMessage(MessageKind.Radio, Callsign, text, _clock(), FrequencyKhz: khz, Outgoing: true));
     }
@@ -193,7 +193,7 @@ public sealed partial class NetworkSession : IAsyncDisposable
     {
         var fsd = RequireConnection();
         to = to.Trim().ToUpperInvariant();
-        if (!IsValidCallsign(to)) throw new InvalidOperationException("Неверный позывной получателя");
+        if (!IsValidCallsign(to)) throw new InvalidOperationException("Invalid recipient callsign");
         await fsd.SendAsync(Packets.TextMessage(Callsign, to, text)).ConfigureAwait(false);
         Raise(new ChatMessage(MessageKind.Private, Callsign, text, _clock(), Peer: to, Outgoing: true));
     }
@@ -202,9 +202,9 @@ public sealed partial class NetworkSession : IAsyncDisposable
     {
         var fsd = RequireConnection();
         if (plan.Departure.Length == 0 || plan.Destination.Length == 0)
-            throw new InvalidOperationException("Укажите аэропорты вылета и назначения");
+            throw new InvalidOperationException("Enter departure and destination airports");
         await fsd.SendAsync(Packets.FlightPlan(Callsign, plan)).ConfigureAwait(false);
-        Info($"План полёта {plan.Departure} → {plan.Destination} отправлен");
+        Info($"Flight plan {plan.Departure} → {plan.Destination} sent");
     }
 
     /// <summary>
@@ -215,7 +215,7 @@ public sealed partial class NetworkSession : IAsyncDisposable
     {
         var fsd = RequireConnection();
         station = station.Trim().ToUpperInvariant();
-        if (!IsValidCallsign(station)) throw new InvalidOperationException("Неверный позывной станции");
+        if (!IsValidCallsign(station)) throw new InvalidOperationException("Invalid station callsign");
         lock (_gate) _atisPending[station] = new PendingAtis(_clock());
         await fsd.SendAsync(Packets.AtisRequest(Callsign, station)).ConfigureAwait(false);
     }
@@ -226,7 +226,7 @@ public sealed partial class NetworkSession : IAsyncDisposable
         _ = SendPositionAsync();
     }
 
-    private FsdClient RequireConnection() => _fsd ?? throw new InvalidOperationException("Нет подключения к сети");
+    private FsdClient RequireConnection() => _fsd ?? throw new InvalidOperationException("Not connected to the network");
 
     // ---- incoming ---------------------------------------------------------------
 
@@ -269,7 +269,7 @@ public sealed partial class NetworkSession : IAsyncDisposable
                 if (p[2] == "ATIS" && IsToMe(p[1])) OnAtisReply(p);
                 break;
             case "$ER":
-                Error($"Сервер: {p[4]} {p[3]}".Trim());
+                Error($"Server: {p[4]} {p[3]}".Trim());
                 break;
         }
     }
@@ -281,9 +281,9 @@ public sealed partial class NetworkSession : IAsyncDisposable
     {
         var fsd = RequireConnection();
         text = text.Trim();
-        if (text.Length == 0) throw new InvalidOperationException("Напишите, что случилось");
+        if (text.Length == 0) throw new InvalidOperationException("Describe what happened");
         await fsd.SendAsync(Packets.TextMessage(Callsign, "*S", text)).ConfigureAwait(false);
-        Raise(new ChatMessage(MessageKind.Broadcast, Callsign, "[супервайзеру] " + text, _clock(), Outgoing: true));
+        Raise(new ChatMessage(MessageKind.Broadcast, Callsign, "[to supervisors] " + text, _clock(), Outgoing: true));
     }
 
     private void OnTextMessage(string from, string to, string text)
@@ -385,7 +385,7 @@ public sealed partial class NetworkSession : IAsyncDisposable
     {
         AtisReceived?.Invoke(this, atis);
         Raise(new ChatMessage(MessageKind.Atis, atis.Station,
-            atis.Lines.Count > 0 ? atis.Text : "Станция не передала информацию", atis.ReceivedAt));
+            atis.Lines.Count > 0 ? atis.Text : "Station sent no information", atis.ReceivedAt));
     }
 
     private void OnPilotPosition(PilotPosition pos)
@@ -426,7 +426,7 @@ public sealed partial class NetworkSession : IAsyncDisposable
             if (e.ModelTitle == ModelMatcher.FallbackTitle)
             {
                 t.InSimulator = true; // give up; don't retry every frame
-                Error($"Не удалось показать {e.Callsign}: модель «{e.ModelTitle}» не найдена");
+                Error($"Cannot display {e.Callsign}: model \"{e.ModelTitle}\" not found");
                 return;
             }
             // Matched model missing: try the network fallback, then the stock A320neo.
@@ -497,7 +497,7 @@ public sealed partial class NetworkSession : IAsyncDisposable
             }
         }
         foreach (var atis in done ?? []) PublishAtis(atis);
-        foreach (var station in unanswered ?? []) Info($"{station}: нет ответа на запрос ATIS");
+        foreach (var station in unanswered ?? []) Info($"{station}: no reply to ATIS request");
     }
 
     private sealed class PendingAtis(DateTime requestedAt)

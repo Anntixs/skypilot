@@ -17,11 +17,11 @@
     <!-- Top bar: flight plan status (filed on the website) and "always on top" pin -->
     <DockPanel Margin="0,0,0,10">
       <ToggleButton DockPanel.Dock="Right" Style="{StaticResource Toggle}" IsChecked="{Binding Topmost}"
-                    Content="📌" Padding="10,6" Margin="8,0,0,0" ToolTip="Поверх остальных окон"/>
-      <Button DockPanel.Dock="Right" Content="ОБНОВИТЬ" Margin="8,0,0,0" Click="OnRefreshFlightPlanClick"
-              ToolTip="Загрузить поданный план с сайта"/>
+                    Content="📌" Padding="10,6" Margin="8,0,0,0" ToolTip="Always on top"/>
+      <Button DockPanel.Dock="Right" Content="REFRESH" Margin="8,0,0,0" Click="OnRefreshFlightPlanClick"
+              ToolTip="Load the filed flight plan from the website"/>
       <Button x:Name="FlightPlanButton" Content="{Binding FlightPlanText}" FontSize="14" Padding="14,9"
-              Click="OnFlightPlanClick" ToolTip="Открыть подачу плана полёта на сайте SkyNetwork">
+              Click="OnFlightPlanClick" ToolTip="File a flight plan on the SkyNetwork website">
         <Button.Style>
           <Style TargetType="Button" BasedOn="{StaticResource RedButton}">
             <Style.Triggers>
@@ -50,7 +50,7 @@
         <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
           <Button DockPanel.Dock="Right" Content="SEND" Margin="8,0,0,0" Click="OnSendClick"/>
           <TextBox x:Name="Input" KeyDown="OnInputKeyDown" FontFamily="Consolas"
-                   ToolTip="Текст уходит на частоту TX. Команды: .help"/>
+                   ToolTip="Text is sent on the TX frequency. Commands: .help"/>
         </DockPanel>
         <Border Style="{StaticResource Box}" Padding="4">
           <TabControl ItemsSource="{Binding Tabs}" SelectedItem="{Binding SelectedTab}"
@@ -108,9 +108,9 @@
             </Button>
             <ToggleButton DockPanel.Dock="Right" Style="{StaticResource Toggle}" Width="96" Margin="0,0,10,0"
                           IsChecked="{Binding ModeC}" Content="{Binding ModeCText}" Click="OnModeCClick"
-                          ToolTip="Режим ответчика: Standby / Mode C"/>
+                          ToolTip="Transponder mode: Standby / Mode C"/>
             <TextBox x:Name="SquawkBox" Style="{StaticResource Readout}" Text="{Binding Squawk, Mode=OneWay}"
-                     MaxLength="4" KeyDown="OnSquawkKeyDown" ToolTip="Введите код и нажмите Enter"/>
+                     MaxLength="4" KeyDown="OnSquawkKeyDown" ToolTip="Type the code and press Enter"/>
           </DockPanel>
         </Border>
 
@@ -132,7 +132,7 @@
                 </StackPanel>
                 <StackPanel VerticalAlignment="Center">
                   <TextBox x:Name="Com1Box" Style="{StaticResource Readout}" Text="{Binding Com1, Mode=OneWay}"
-                           MaxLength="7" KeyDown="OnComKeyDown" Tag="1" ToolTip="Введите частоту и нажмите Enter"/>
+                           MaxLength="7" KeyDown="OnComKeyDown" Tag="1" ToolTip="Type the frequency and press Enter"/>
                   <TextBlock FontSize="12" TextTrimming="CharacterEllipsis">
                     <Run Text="{Binding Com1Station, Mode=OneWay}" Foreground="{StaticResource Muted}"/>
                     <Run Text="{Binding Com1Heard, Mode=OneWay}" Foreground="{StaticResource Accent}" FontWeight="SemiBold"/>
@@ -153,7 +153,7 @@
                 </StackPanel>
                 <StackPanel VerticalAlignment="Center">
                   <TextBox x:Name="Com2Box" Style="{StaticResource Readout}" Text="{Binding Com2, Mode=OneWay}"
-                           MaxLength="7" KeyDown="OnComKeyDown" Tag="2" ToolTip="Введите частоту и нажмите Enter"/>
+                           MaxLength="7" KeyDown="OnComKeyDown" Tag="2" ToolTip="Type the frequency and press Enter"/>
                   <TextBlock FontSize="12" TextTrimming="CharacterEllipsis">
                     <Run Text="{Binding Com2Station, Mode=OneWay}" Foreground="{StaticResource Muted}"/>
                     <Run Text="{Binding Com2Heard, Mode=OneWay}" Foreground="{StaticResource Accent}" FontWeight="SemiBold"/>
@@ -168,7 +168,7 @@
           <!-- Push-to-talk: transmits on the TX radio while held; red while on the air -->
           <Button DockPanel.Dock="Right" Content="{Binding PttText}" Width="120"
                   PreviewMouseLeftButtonDown="OnPttDown" PreviewMouseLeftButtonUp="OnPttUp" LostMouseCapture="OnPttUp"
-                  ToolTip="Держите, чтобы говорить на частоте TX. Клавиша PTT назначается в настройках">
+                  ToolTip="Hold to talk on the TX frequency. Assign the push-to-talk key in Settings">
             <Button.Style>
               <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
                 <Style.Triggers>
@@ -180,7 +180,7 @@
             </Button.Style>
           </Button>
           <TextBlock Margin="4,0,0,0" Foreground="{StaticResource Muted}" FontSize="12">
-            <Run Text="Трафик рядом:"/>
+            <Run Text="Nearby traffic:"/>
             <Run Text="{Binding TrafficCount, Mode=OneWay}" Foreground="{StaticResource Fg}"/>
           </TextBlock>
         </DockPanel>
@@ -194,14 +194,14 @@
           <!-- Double click: tune the TX radio (ATIS stations: request the ATIS). Right click: menu -->
           <ListBox x:Name="ControllerList" ItemsSource="{Binding Controllers}" Background="Transparent" BorderThickness="0"
                    MouseDoubleClick="OnControllerDoubleClick"
-                   ToolTip="Двойной щелчок — настроить радио TX, на ATIS — запросить ATIS. Правый щелчок — меню">
+                   ToolTip="Double-click to tune the TX radio (ATIS: request ATIS). Right-click for menu">
             <ListBox.ContextMenu>
               <ContextMenu>
-                <MenuItem Header="Запросить ATIS" Click="OnRequestAtisClick"
-                          ToolTip="У станции ATIS — текст ATIS, у диспетчера — информация о нём"/>
+                <MenuItem Header="Request ATIS" Click="OnRequestAtisClick"
+                          ToolTip="ATIS station: ATIS text; controller: controller info"/>
                 <Separator/>
-                <MenuItem Header="Настроить COM1 на частоту" Click="OnTuneCom1Click"/>
-                <MenuItem Header="Настроить COM2 на частоту" Click="OnTuneCom2Click"/>
+                <MenuItem Header="Tune COM1 to frequency" Click="OnTuneCom1Click"/>
+                <MenuItem Header="Tune COM2 to frequency" Click="OnTuneCom2Click"/>
               </ContextMenu>
             </ListBox.ContextMenu>
             <ListBox.ItemTemplate>
@@ -228,7 +228,7 @@
     <!-- Bottom bar -->
     <DockPanel Grid.Row="2" Margin="0,10,0,0">
       <Button x:Name="ConnectButton" Content="{Binding ConnectButtonText}" Width="130" Margin="0,0,8,0"
-              Click="OnConnectClick" ToolTip="Подключиться к сети / отключиться">
+              Click="OnConnectClick" ToolTip="Connect to / disconnect from the network">
         <Button.Style>
           <Style TargetType="Button" BasedOn="{StaticResource RedButton}">
             <Style.Triggers>
@@ -240,7 +240,7 @@
         </Button.Style>
       </Button>
       <ToggleButton Style="{StaticResource Toggle}" Content="ATC" Width="100" Margin="0,0,8,0" IsChecked="{Binding AtcVisible}"/>
-      <Button Content="НАСТРОЙКИ" Width="120" Click="OnSettingsClick"/>
+      <Button Content="SETTINGS" Width="120" Click="OnSettingsClick"/>
       <!-- Voice server connection: green when connected, red when it failed; click to reconnect -->
       <Button Content="{Binding VoiceText}" Width="100" Margin="8,0,0,0" Click="OnVoiceClick" ToolTip="{Binding VoiceTip}">
         <Button.Style>

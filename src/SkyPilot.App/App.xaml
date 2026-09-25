@@ -138,7 +138,7 @@
       <Setter Property="VerticalContentAlignment" Value="Center"/>
     </Style>
 
-    <!-- Dark tooltips and context menus (ATC list: ATIS text, "Запросить ATIS"). -->
+    <!-- Dark tooltips and context menus (ATC list: ATIS text, "Request ATIS"). -->
     <Style TargetType="ToolTip">
       <Setter Property="Background" Value="{StaticResource Panel}"/>
       <Setter Property="Foreground" Value="{StaticResource Fg}"/>

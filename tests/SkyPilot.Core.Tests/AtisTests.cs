@@ -54,7 +54,7 @@ public class AtisTests
         Assert.Equal("$CQAFL123:UUEE_ATIS:ATIS", server.Expect("$CQ"));
 
         var cmd = new CommandProcessor(session, new FakeSimulator());
-        Assert.Equal("Запрос ATIS: UUDD_TWR", await cmd.ExecuteAsync(".atis uudd_twr"));
+        Assert.Equal("ATIS requested: UUDD_TWR", await cmd.ExecuteAsync(".atis uudd_twr"));
         Assert.Equal("$CQAFL123:UUDD_TWR:ATIS", server.Expect("$CQ"));
         await session.DisconnectAsync();
     }

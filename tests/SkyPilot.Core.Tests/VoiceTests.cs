@@ -171,21 +171,21 @@ public class VoiceTests
         voice.Start(new VoiceLogin("127.0.0.1", port, 1000001, "AFL123", "secret"));
 
         await WaitUntil(() => voice.Failing, 8000);
-        Assert.StartsWith("Голос: нет связи с голосовым сервером", Assert.Single(ConnectionErrors(errors)));
+        Assert.StartsWith("Voice: no connection to the voice server", Assert.Single(ConnectionErrors(errors)));
 
         // The server comes up: the next retry connects.
         using var server = new FakeVoiceServer(port);
         await WaitUntil(() => voice.State == VoiceState.Connected, 10000);
         Assert.False(voice.Failing);
         Assert.Single(ConnectionErrors(errors));
-        Assert.Contains(infos, i => i.StartsWith("Голос: подключено", StringComparison.Ordinal));
+        Assert.Contains(infos, i => i.StartsWith("Voice: connected", StringComparison.Ordinal));
     }
 
     [Fact]
     public void Describe_TranslatesClientReasons()
     {
-        Assert.Equal("голосовой сервер не отвечает", PilotVoice.Describe("Voice server not responding"));
-        Assert.Equal("не найден адрес voice.example", PilotVoice.Describe("Cannot resolve voice.example"));
+        Assert.Equal("voice server not responding", PilotVoice.Describe("Voice server not responding"));
+        Assert.Equal("cannot resolve voice.example", PilotVoice.Describe("Cannot resolve voice.example"));
         Assert.Equal("Invalid password", PilotVoice.Describe("Invalid password"));
     }
 
@@ -194,7 +194,7 @@ public class VoiceTests
     /// microphone and speakers fails there (and only there) after connecting.
     /// </summary>
     private static List<string> ConnectionErrors(IEnumerable<string> errors) =>
-        errors.Where(e => !e.Contains("ошибка аудиоустройства", StringComparison.Ordinal)).ToList();
+        errors.Where(e => !e.Contains("audio device error", StringComparison.Ordinal)).ToList();
 
     private static async Task WaitUntil(Func<bool> condition, int timeoutMs = 5000)
     {

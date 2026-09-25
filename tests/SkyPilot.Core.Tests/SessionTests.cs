@@ -170,14 +170,14 @@ public class SessionTests
 
         Assert.Equal("COM1: 118.700", await cmd.ExecuteAsync(".com1 118.7"));
         Assert.Equal((1, 118700), sim.ComChanges.Single());
-        Assert.Equal("Ответчик: 7000", await cmd.ExecuteAsync(".x 7000"));
+        Assert.Equal("Squawk 7000", await cmd.ExecuteAsync(".x 7000"));
         Assert.Equal(7000, sim.Squawk);
-        Assert.StartsWith("Код ответчика", await cmd.ExecuteAsync(".x 7800"));
+        Assert.StartsWith("Squawk code", await cmd.ExecuteAsync(".x 7800"));
         Assert.Null(await cmd.ExecuteAsync(".msg SBI456 hello there"));
         Assert.Equal("#TMAFL123:SBI456:hello there", server.Expect("#TM"));
         Assert.Null(await cmd.ExecuteAsync("request taxi"));
         Assert.Equal("#TMAFL123:@18100:request taxi", server.Expect("#TM"));
-        Assert.StartsWith("Неизвестная команда", await cmd.ExecuteAsync(".foo"));
+        Assert.StartsWith("Unknown command", await cmd.ExecuteAsync(".foo"));
         await session.DisconnectAsync();
     }
 
