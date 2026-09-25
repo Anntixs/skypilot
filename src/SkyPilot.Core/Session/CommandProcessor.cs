@@ -16,6 +16,7 @@ public sealed class CommandProcessor(NetworkSession session, ISimulator sim)
         ".modec — переключить режим ответчика Standby/Mode C\n" +
         ".msg ПОЗЫВНОЙ текст — личное сообщение\n" +
         ".atis СТАНЦИЯ — запросить ATIS (у диспетчера — информацию о нём)\n" +
+        ".wallop текст — вызвать супервайзера (помощь, нарушение, проблема)\n" +
         ".disconnect — отключиться от сети\n" +
         "Текст без точки отправляется на частоту радио с включённым TX.";
 
@@ -63,6 +64,11 @@ public sealed class CommandProcessor(NetworkSession session, ISimulator sim)
                 if (arg.Length == 0) return "Пример: .atis UUEE_ATIS";
                 await session.RequestAtisAsync(arg).ConfigureAwait(false);
                 return $"Запрос ATIS: {arg.ToUpperInvariant()}";
+            case ".wallop":
+                string request = line[cmd.Length..].Trim();
+                if (request.Length == 0) return "Пример: .wallop AFL123 не отвечает на частоте";
+                await session.SendSupervisorRequestAsync(request).ConfigureAwait(false);
+                return "Запрос отправлен супервайзерам";
             case ".disconnect":
                 await session.DisconnectAsync().ConfigureAwait(false);
                 return null;
