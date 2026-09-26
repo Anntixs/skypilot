@@ -3,21 +3,32 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              StartupUri="Views/MainWindow.xaml">
   <Application.Resources>
-    <SolidColorBrush x:Key="Bg" Color="#1F1F1F"/>
-    <SolidColorBrush x:Key="Panel" Color="#262626"/>
-    <SolidColorBrush x:Key="Border" Color="#3E3E3E"/>
-    <SolidColorBrush x:Key="Control" Color="#3A3A3A"/>
-    <SolidColorBrush x:Key="ControlHover" Color="#474747"/>
-    <SolidColorBrush x:Key="Fg" Color="#F2F2F2"/>
-    <SolidColorBrush x:Key="Muted" Color="#9A9A9A"/>
-    <SolidColorBrush x:Key="Accent" Color="#3FA9F5"/>
-    <SolidColorBrush x:Key="Ok" Color="#1E8E2E"/>
-    <SolidColorBrush x:Key="OkHover" Color="#25A338"/>
-    <SolidColorBrush x:Key="Bad" Color="#C8141E"/>
-    <SolidColorBrush x:Key="BadHover" Color="#DD2630"/>
+    <!-- SkyNetwork colours (as on the website's dark theme): deep navy, the logo's blues, green and red for states. -->
+    <SolidColorBrush x:Key="Bg" Color="#050B17"/>
+    <SolidColorBrush x:Key="Panel" Color="#0A1426"/>
+    <SolidColorBrush x:Key="Border" Color="#1C2B45"/>
+    <SolidColorBrush x:Key="Control" Color="#13213A"/>
+    <SolidColorBrush x:Key="ControlHover" Color="#1B2E4F"/>
+    <SolidColorBrush x:Key="Fg" Color="#E8F1FD"/>
+    <SolidColorBrush x:Key="Muted" Color="#93A6C2"/>
+    <SolidColorBrush x:Key="Accent" Color="#5AA8F7"/>
+    <SolidColorBrush x:Key="Ok" Color="#1F9D55"/>
+    <SolidColorBrush x:Key="OkHover" Color="#25B462"/>
+    <SolidColorBrush x:Key="Bad" Color="#D0342C"/>
+    <SolidColorBrush x:Key="BadHover" Color="#E0453D"/>
+    <!-- The primary action wears the logo's blue gradient, as the website's buttons do. -->
+    <LinearGradientBrush x:Key="AccentFill" StartPoint="0,0" EndPoint="0,1">
+      <GradientStop Color="#1D72E6" Offset="0"/>
+      <GradientStop Color="#0F5BCF" Offset="1"/>
+    </LinearGradientBrush>
+    <!-- A soft blue glow from the top of every window, like the website's pages. -->
+    <RadialGradientBrush x:Key="WindowBg" Center="0.5,0" GradientOrigin="0.5,0" RadiusX="0.9" RadiusY="0.8">
+      <GradientStop Color="#0C2654" Offset="0"/>
+      <GradientStop Color="#050B17" Offset="1"/>
+    </RadialGradientBrush>
 
     <Style TargetType="Window" x:Key="SkyWindow">
-      <Setter Property="Background" Value="{StaticResource Bg}"/>
+      <Setter Property="Background" Value="{StaticResource WindowBg}"/>
       <Setter Property="Foreground" Value="{StaticResource Fg}"/>
       <Setter Property="FontFamily" Value="Segoe UI"/>
       <Setter Property="FontSize" Value="13"/>
@@ -28,13 +39,14 @@
     </Style>
     <Style TargetType="Label">
       <Setter Property="Foreground" Value="{StaticResource Muted}"/>
-      <Setter Property="Padding" Value="0,8,0,3"/>
+      <Setter Property="Padding" Value="0,10,0,4"/>
     </Style>
     <Style TargetType="TextBox">
       <Setter Property="Background" Value="{StaticResource Panel}"/>
       <Setter Property="Foreground" Value="{StaticResource Fg}"/>
       <Setter Property="BorderBrush" Value="{StaticResource Border}"/>
       <Setter Property="CaretBrush" Value="{StaticResource Fg}"/>
+      <Setter Property="SelectionBrush" Value="{StaticResource Accent}"/>
       <Setter Property="Padding" Value="8,6"/>
       <Setter Property="VerticalContentAlignment" Value="Center"/>
     </Style>
@@ -43,31 +55,34 @@
       <Setter Property="Foreground" Value="{StaticResource Fg}"/>
       <Setter Property="BorderBrush" Value="{StaticResource Border}"/>
       <Setter Property="CaretBrush" Value="{StaticResource Fg}"/>
+      <Setter Property="SelectionBrush" Value="{StaticResource Accent}"/>
       <Setter Property="Padding" Value="8,6"/>
     </Style>
     <Style TargetType="CheckBox">
       <Setter Property="Foreground" Value="{StaticResource Fg}"/>
     </Style>
 
-    <!-- Flat button: grey by default, green/red variants below. -->
+    <!-- Rounded button: navy by default, blue gradient for the main action, green/red for states. -->
     <Style TargetType="Button">
       <Setter Property="Background" Value="{StaticResource Control}"/>
       <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Border}"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
       <Setter Property="Padding" Value="14,7"/>
       <Setter Property="Cursor" Value="Hand"/>
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="Button">
-            <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="3" Padding="{TemplateBinding Padding}">
+            <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                    CornerRadius="8" Padding="{TemplateBinding Padding}">
               <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Bd" Property="Opacity" Value="0.85"/>
+                <Setter TargetName="Bd" Property="Opacity" Value="0.88"/>
               </Trigger>
               <Trigger Property="IsPressed" Value="True">
-                <Setter TargetName="Bd" Property="Opacity" Value="0.7"/>
+                <Setter TargetName="Bd" Property="Opacity" Value="0.72"/>
               </Trigger>
               <Trigger Property="IsEnabled" Value="False">
                 <Setter TargetName="Bd" Property="Opacity" Value="0.4"/>
@@ -76,6 +91,11 @@
           </ControlTemplate>
         </Setter.Value>
       </Setter>
+    </Style>
+    <Style x:Key="AccentButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="Background" Value="{StaticResource AccentFill}"/>
+      <Setter Property="BorderBrush" Value="#3386F0"/>
+      <Setter Property="Foreground" Value="White"/>
     </Style>
     <Style x:Key="GreenButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
       <Setter Property="Background" Value="{StaticResource Ok}"/>
@@ -84,25 +104,28 @@
       <Setter Property="Background" Value="{StaticResource Bad}"/>
     </Style>
 
-    <!-- Toggle (RX, TX, MODE C, pin): grey when off, green when on. -->
+    <!-- Toggle (RX, TX, MODE C, pin): navy when off, green when on. -->
     <Style x:Key="Toggle" TargetType="ToggleButton">
       <Setter Property="Background" Value="{StaticResource Control}"/>
       <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Border}"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
       <Setter Property="Padding" Value="12,6"/>
       <Setter Property="Cursor" Value="Hand"/>
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="ToggleButton">
-            <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="3" Padding="{TemplateBinding Padding}">
+            <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                    CornerRadius="8" Padding="{TemplateBinding Padding}">
               <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsChecked" Value="True">
                 <Setter TargetName="Bd" Property="Background" Value="{StaticResource Ok}"/>
+                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Ok}"/>
               </Trigger>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Bd" Property="Opacity" Value="0.85"/>
+                <Setter TargetName="Bd" Property="Opacity" Value="0.88"/>
               </Trigger>
               <Trigger Property="IsEnabled" Value="False">
                 <Setter TargetName="Bd" Property="Opacity" Value="0.4"/>
@@ -113,17 +136,19 @@
       </Setter>
     </Style>
 
-    <!-- Section box with a caption above it (COM 1, COM 2, XPDR). -->
+    <!-- Section card with a caption above it (COM 1, COM 2, XPDR, ATC, chat). -->
     <Style x:Key="Box" TargetType="Border">
+      <Setter Property="Background" Value="{StaticResource Panel}"/>
       <Setter Property="BorderBrush" Value="{StaticResource Border}"/>
       <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="CornerRadius" Value="3"/>
+      <Setter Property="CornerRadius" Value="12"/>
       <Setter Property="Padding" Value="12,8"/>
     </Style>
     <Style x:Key="Caption" TargetType="TextBlock">
-      <Setter Property="Foreground" Value="{StaticResource Fg}"/>
-      <Setter Property="FontSize" Value="12"/>
-      <Setter Property="Margin" Value="4,0,0,4"/>
+      <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Margin" Value="4,0,0,5"/>
     </Style>
 
     <!-- Inline editable readouts (frequencies, squawk). -->
@@ -132,6 +157,7 @@
       <Setter Property="BorderThickness" Value="0"/>
       <Setter Property="Foreground" Value="{StaticResource Fg}"/>
       <Setter Property="CaretBrush" Value="{StaticResource Fg}"/>
+      <Setter Property="SelectionBrush" Value="{StaticResource Accent}"/>
       <Setter Property="FontSize" Value="30"/>
       <Setter Property="FontFamily" Value="Segoe UI Light"/>
       <Setter Property="Padding" Value="0"/>

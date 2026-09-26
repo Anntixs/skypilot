@@ -25,6 +25,8 @@
       <TextBox x:Name="ServerBox" ToolTip="Host or host:port, e.g. 127.0.0.1:6809"/>
       <Label Content="SkyNetwork website"/>
       <TextBox x:Name="WebsiteBox" ToolTip="Where flight plans are filed"/>
+      <Label Content="SimBrief username or Pilot ID"/>
+      <TextBox x:Name="SimbriefBox" ToolTip="The SIMBRIEF button loads your latest SimBrief flight plan and files it"/>
       <Label Content="Simulator"/>
       <ComboBox x:Name="SimulatorBox" DisplayMemberPath="Title" SelectedValuePath="Id"
                 ToolTip="Automatic finds the simulator that is running"/>

@@ -31,6 +31,8 @@ public sealed class AppSettings
     public string HomeAirport { get; set; } = "";
     /// <summary>SkyNetwork website, where flight plans are filed.</summary>
     public string Website { get; set; } = "http://127.0.0.1:8000/";
+    /// <summary>SimBrief username or numeric Pilot ID: SIMBRIEF loads the latest plan made there.</summary>
+    public string SimbriefUser { get; set; } = "";
     public List<ServerEntry> Servers { get; set; } = [new ServerEntry()];
     public string SelectedServer { get; set; } = "SKYNET";
     public string LastCallsign { get; set; } = "";

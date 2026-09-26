@@ -44,6 +44,11 @@ public partial class MainWindow : Window
     private int _historyIndex;
     private DateTime _nextPlanPoll;
     private FlightPlan? _sentPlan;
+    /// <summary>The plan loaded from SimBrief: it is used until REFRESH is clicked or another plan is filed on the website.</summary>
+    private FlightPlan? _simbriefPlan;
+    /// <summary>The website's plan when SimBrief was loaded, so that a plan filed there later can be told apart.</summary>
+    private FlightPlan? _websitePlanAtSimbrief;
+    private bool _websiteKnownAtSimbrief;
     private ConnectInfo? _connectInfo;
     private OwnAircraftData? _own;
 
@@ -281,24 +286,83 @@ public partial class MainWindow : Window
             if (!quiet) Error("SkyNetwork website unavailable: " + ex.Message);
             return;
         }
-        _vm.FlightPlan = plan;
+        if (_simbriefPlan != null)
+        {
+            // The SimBrief plan stays until REFRESH is clicked or a different plan is filed on the website.
+            bool newOnWebsite = _websiteKnownAtSimbrief && plan != _websitePlanAtSimbrief;
+            if (quiet && !newOnWebsite)
+            {
+                await UsePlanAsync(_simbriefPlan);
+                return;
+            }
+            _simbriefPlan = null;
+        }
         if (plan == null)
         {
+            _vm.FlightPlan = null;
             if (!quiet) Info("No flight plan filed on the website.");
             return;
         }
-        if (_session.IsConnected && plan != _sentPlan)
+        await UsePlanAsync(plan);
+    }
+
+    /// <summary>Shows the plan and, when connected, sends it to the network if it changed since the last time.</summary>
+    private async Task UsePlanAsync(FlightPlan plan)
+    {
+        _vm.FlightPlan = plan;
+        if (!_session.IsConnected || plan == _sentPlan) return;
+        try
+        {
+            await _session.SendFlightPlanAsync(plan);
+            _sentPlan = plan;
+        }
+        catch (InvalidOperationException ex)
+        {
+            Error(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// SIMBRIEF: loads the pilot's latest SimBrief plan and files it on the network (at once when connected, otherwise
+    /// when the connection is made); before connecting, the SimBrief callsign and aircraft also fill the connect window.
+    /// </summary>
+    private async void OnSimbriefClick(object sender, RoutedEventArgs e)
+    {
+        if (_settings.SimbriefUser.Trim().Length == 0)
+        {
+            Error("Enter your SimBrief username or Pilot ID in Settings, then click SIMBRIEF again.");
+            return;
+        }
+        var (result, error) = await new SimbriefClient(Http).FetchAsync(_settings.SimbriefUser);
+        if (result == null)
+        {
+            Error(error ?? "The SimBrief plan was not loaded.");
+            return;
+        }
+        // What the website has now: from here on only a different plan filed there replaces the SimBrief one.
+        _websiteKnownAtSimbrief = false;
+        if (Website() is { } site && _settings.Cid != 0)
         {
             try
             {
-                await _session.SendFlightPlanAsync(plan);
-                _sentPlan = plan;
+                _websitePlanAtSimbrief = await site.GetLatestFlightPlanAsync(_settings.Cid);
+                _websiteKnownAtSimbrief = true;
             }
-            catch (InvalidOperationException ex)
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
             {
-                Error(ex.Message);
+                // The website is unavailable: the SimBrief plan simply stays until REFRESH.
             }
         }
+        var plan = result.Plan;
+        _simbriefPlan = plan;
+        if (!_session.IsConnected && result.Callsign.Length > 0)
+        {
+            _settings.LastCallsign = result.Callsign;
+            if (plan.AircraftType.Length > 0) _settings.LastTypeCode = plan.AircraftType;
+        }
+        await UsePlanAsync(plan);
+        Info($"SimBrief plan loaded: {result.Callsign} {plan.Departure} → {plan.Destination}, {plan.AircraftType}, {plan.CruiseAltitude}" +
+             (_session.IsConnected ? ". Filed on the network." : ". It is filed when you connect."));
     }
 
     // ---- radios and transponder -------------------------------------------------------------
